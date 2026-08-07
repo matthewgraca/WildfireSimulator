@@ -1,0 +1,119 @@
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, random_split
+from torch.utils.tensorboard import SummaryWriter
+
+from wildfire_simulator.models import MK_UNet_Regression
+from wildfire_simulator.callbacks import ModelCheckpoint, TensorBoardCallback
+from wildfire_simulator.forward_burn_process import ForwardBurnProcess
+from wildfire_simulator.trainers import ForwardBurnTrainer, BurnerBatchProcessor
+from wildfire_simulator.dataloader import TrialCollection, TrialFileLoader, WildfireDataLoader 
+from wildfire_simulator.datasets import WildfireDataset, TransformedDataset
+from wildfire_simulator.transforms import MinMaxPerChannel
+from wildfire_simulator.scheduled_sampler import ScheduledSampler
+from wildfire_simulator.utils import ScalarRNG
+
+def main():
+    dataloader = WildfireDataLoader(TrialCollection(TrialFileLoader()))
+
+    dataset = WildfireDataset(dataloader)
+
+    train_size = int(0.8 * len(dataset))
+    test_size = len(dataset) - train_size
+    generator = torch.Generator().manual_seed(42)
+    train_set, test_set = random_split(
+        dataset,
+        [train_size, test_size],
+        generator=generator
+    )
+
+    transform = MinMaxPerChannel(dataset.min_val, dataset.max_val)
+
+    train_set = TransformedDataset(train_set, transform)
+    test_set = TransformedDataset(test_set, transform)
+    
+    train_loader = DataLoader(
+        dataset=train_set,
+        batch_size=16,
+        shuffle=True,
+        num_workers=4,
+    )
+    
+    val_loader = DataLoader(
+        dataset=test_set,
+        batch_size=16,
+        shuffle=False,
+        drop_last=False,
+        num_workers=4,
+    )
+    
+    model = MK_UNet_Regression(
+        in_channels=14,
+        out_channels=2,
+        channels=[16, 32, 64, 96, 160],
+        final_activation='sigmoid'
+    )
+    
+    checkpoint_cb = ModelCheckpoint(
+        monitor='val_loss',
+        mode='min',
+        filepath='./checkpoints/best-model-{epoch:02d}-{val_loss:.2f}.pt'
+    )
+
+    train_writer = SummaryWriter("training/train")
+    val_writer = SummaryWriter("training/val")
+
+    tensorboard_cb = TensorBoardCallback(
+        train_writer=train_writer,
+        val_writer=val_writer
+    )
+
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        5e-4,
+        weight_decay=1e-4
+    )
+
+    class ConstSampler():
+        def __init__(self, prob):
+            self.prob = prob
+        def get_prob(self, epoch):
+            return self.prob
+
+    burner = ForwardBurnProcess()
+    # sampler = ScheduledSampler(k=0.1, t0=40)
+    sampler = ConstSampler(0.0)
+    rng = ScalarRNG()
+    train_batch_processor = BurnerBatchProcessor(
+        burner=burner,
+        dt=1/48,
+        eval=False,
+        sampler=sampler,
+        rng=rng
+    )
+    val_batch_processor = BurnerBatchProcessor(
+        burner=burner,
+        dt=1/48,
+        eval=True
+    )
+    
+    trainer = ForwardBurnTrainer(
+        model=model,
+        optimizer=optimizer,
+        loss_fn=nn.BCELoss(),
+        train_loader=train_loader,
+        val_loader=val_loader,
+        train_batch_processor=train_batch_processor,
+        val_batch_processor=val_batch_processor,
+        callbacks=[checkpoint_cb, tensorboard_cb],
+        epochs=100,
+        max_t=1
+    )
+
+    trainer.fit()
+
+    # trainer.load_checkpoint("./checkpoints/best-model-04-0.00.pt")
+    # print(trainer.evaluate())
+
+if __name__ == "__main__":
+    main()
