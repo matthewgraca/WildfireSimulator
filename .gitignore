@@ -5,6 +5,7 @@ INSTRUCTIONS.md
 checkpoints/
 training/
 training_test/
+checkpoints_test/
 
 # Created by https://www.toptal.com/developers/gitignore/api/python
 # Edit at https://www.toptal.com/developers/gitignore?templates=python
