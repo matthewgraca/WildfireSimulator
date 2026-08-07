@@ -2,7 +2,7 @@
 
 ## Environment
 ```bash
-conda create -f environment.yml
+conda env create -f environment.yml
 conda activate wildfire_env
 pip install -e .
 pip uninstall torch torchvision
