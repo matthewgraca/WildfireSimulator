@@ -35,6 +35,16 @@ class ForwardBurnSimulator:
 
     def run_to(self, t, return_history=False):
         input = self.transform(self.data)
+
+        # Apply burn process at t0: zero channels 0-1 where arrival time > t0
+        # (matches training, where the model never sees the full unmasked input)
+        if isinstance(input, torch.Tensor) and input.dim() == 4:
+            t0_normalized = self.t0 / self.max_t
+            not_burnt = input[:, 1:2, :, :] > t0_normalized
+            input = input.clone()
+            input[:, 0:1][not_burnt] = 0.0
+            input[:, 1:2][not_burnt] = 0.0
+
         history = [self.data]
         dt = self.dt/self.max_t
         for i in np.arange(self.t0/self.max_t, t/self.max_t, dt):
