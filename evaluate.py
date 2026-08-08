@@ -358,13 +358,10 @@ def main():
                         help='Time step for rollout (should match training)')
     parser.add_argument('--max_t', type=float, default=1.0,
                         help='Maximum time for rollout (should match training)')
-    parser.add_argument('--device', type=str, default=None,
-                        help='Device (cuda/cpu, auto-detected if not specified)')
     args = parser.parse_args()
 
     # Setup
-    device = torch.device(args.device if args.device else
-                          ('cuda' if torch.cuda.is_available() else 'cpu'))
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
