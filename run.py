@@ -113,7 +113,6 @@ def main():
         epochs=100,
         max_t=1,
         device=device,
-        use_amp=True,
     )
 
     trainer.fit()

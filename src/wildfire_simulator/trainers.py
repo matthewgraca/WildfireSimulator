@@ -1,6 +1,5 @@
 import torch
 import torch.nn.functional as F
-from torch.amp import autocast, GradScaler
 
 from tqdm import tqdm
 
@@ -103,7 +102,6 @@ class ForwardBurnTrainer:
         epochs=1,
         max_t=1,
         device=None,
-        use_amp=True,
     ):
         self.model = model
         self.optimizer = optimizer
@@ -122,10 +120,6 @@ class ForwardBurnTrainer:
         # Ensure batch processors use the same device as the trainer
         self.train_batch_processor.device = self.device
         self.val_batch_processor.device = self.device
-
-        # AMP setup
-        self.use_amp = use_amp and self.device.type == 'cuda'
-        self.scaler = GradScaler('cuda', enabled=self.use_amp)
 
     def load_checkpoint(self, checkpoint_path):
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
@@ -154,17 +148,13 @@ class ForwardBurnTrainer:
 
                 self.optimizer.zero_grad()
 
-                with autocast('cuda', enabled=self.use_amp):
-                    pred_out = self.model(inputs)
-                    if isinstance(pred_out, (list, tuple)):
-                        pred_out = pred_out[0]
+                pred_out = self.model(inputs)
+                if isinstance(pred_out, (list, tuple)):
+                    pred_out = pred_out[0]
 
-                # Compute loss in float32 (BCELoss is not autocast-safe)
-                loss = self.loss_fn(pred_out.float().clamp(0, 1), targets)
-
-                self.scaler.scale(loss).backward()
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
+                loss = self.loss_fn(pred_out, targets)
+                loss.backward()
+                self.optimizer.step()
 
                 # Update preds for next time step (stay on device)
                 preds_padded = inputs[:, :13, :, :].detach().clone()
@@ -200,17 +190,15 @@ class ForwardBurnTrainer:
                     )
                     # inputs and targets are already on device
 
-                    with autocast('cuda', enabled=self.use_amp):
-                        pred_out = self.model(inputs)
-                        if isinstance(pred_out, (list, tuple)):
-                            pred_out = pred_out[0]
+                    pred_out = self.model(inputs)
+                    if isinstance(pred_out, (list, tuple)):
+                        pred_out = pred_out[0]
 
                     # Update preds for next time step (stay on device)
                     preds_padded = inputs[:, :13, :, :].detach().clone()
                     preds_padded[:, :2, :, :] = pred_out.detach()
 
-                # Compute loss in float32 (pred_out may be float16 from autocast)
-                loss = self.loss_fn(pred_out.float().clamp(0, 1), targets)
+                loss = self.loss_fn(pred_out, targets)
                 total_loss += loss.item() * batch.size(0)
                 pbar.set_postfix(val_loss=f"{loss.item():.4f}")
 
