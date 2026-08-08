@@ -80,6 +80,8 @@ def main():
         def get_prob(self, epoch):
             return self.prob
 
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     burner = ForwardBurnProcess()
     # sampler = ScheduledSampler(k=0.1, t0=40)
     sampler = ConstSampler(0.0)
@@ -89,12 +91,14 @@ def main():
         dt=1/48,
         eval=False,
         sampler=sampler,
-        rng=rng
+        rng=rng,
+        device=device
     )
     val_batch_processor = BurnerBatchProcessor(
         burner=burner,
         dt=1/48,
-        eval=True
+        eval=True,
+        device=device
     )
     
     trainer = ForwardBurnTrainer(
@@ -107,7 +111,9 @@ def main():
         val_batch_processor=val_batch_processor,
         callbacks=[checkpoint_cb, tensorboard_cb],
         epochs=100,
-        max_t=1
+        max_t=1,
+        device=device,
+        use_amp=True,
     )
 
     trainer.fit()
