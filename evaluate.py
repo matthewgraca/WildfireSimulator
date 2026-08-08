@@ -67,15 +67,20 @@ def run_inference(model, sample, transform, device, dt, max_t):
     """
     burner = ForwardBurnProcess()
 
-    # Ground truth snapshots at each time step
+    # Transform the sample to normalized space (where t ∈ [0,1] is meaningful)
+    sample_transformed = transform(sample)
+
+    # Ground truth snapshots at each time step (burn in normalized space,
+    # then inverse-transform to raw space to match pred_history)
     times = np.arange(0, max_t, dt)
     gt_history = []
     for t in times:
-        burned = burner(sample, t)
-        gt_history.append(burned)
-    gt_history.append(sample)  # final state
+        burned = burner(sample_transformed, t)
+        gt_history.append(transform.inverse(burned))
+    gt_history.append(sample)  # final state (raw)
 
     # Move sample to device and add batch dimension for inference
+    # (simulator applies transform internally, expects raw data)
     sample_batched = sample.unsqueeze(0).to(device)
 
     # Predicted rollout using the simulator
