@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 
 from tqdm import tqdm
 
@@ -44,6 +44,11 @@ class BurnerBatchProcessor:
         true = true.to(self.device)
         pred = pred.to(self.device)
 
+        # Crop pred to match true's spatial dimensions (pred may be padded
+        # from a previous step's model output)
+        H, W = true.shape[-2], true.shape[-1]
+        pred = pred[:, :, :H, :W]
+
         # --- Vectorized burn at time t (inputs) ---
         not_burnt_t = true[:, 1:2, :, :] > t  # (N, 1, H, W)
         burned_t = true.clone()
@@ -69,7 +74,7 @@ class BurnerBatchProcessor:
 
         # --- Append time channel (on device) ---
         t_channel = torch.full(
-            (N, 1, true.shape[-2], true.shape[-1]), t,
+            (N, 1, in_frames.shape[-2], in_frames.shape[-1]), t,
             device=self.device, dtype=true.dtype
         )
         inputs = torch.cat([in_frames, t_channel], dim=1)  # (N, 14, H, W)
@@ -114,9 +119,13 @@ class ForwardBurnTrainer:
         self.current_epoch = 0
         self.max_t = max_t
 
+        # Ensure batch processors use the same device as the trainer
+        self.train_batch_processor.device = self.device
+        self.val_batch_processor.device = self.device
+
         # AMP setup
         self.use_amp = use_amp and self.device.type == 'cuda'
-        self.scaler = GradScaler(enabled=self.use_amp)
+        self.scaler = GradScaler('cuda', enabled=self.use_amp)
 
     def load_checkpoint(self, checkpoint_path):
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
@@ -145,11 +154,13 @@ class ForwardBurnTrainer:
 
                 self.optimizer.zero_grad()
 
-                with autocast(enabled=self.use_amp):
+                with autocast('cuda', enabled=self.use_amp):
                     pred_out = self.model(inputs)
                     if isinstance(pred_out, (list, tuple)):
                         pred_out = pred_out[0]
-                    loss = self.loss_fn(pred_out, targets)
+
+                # Compute loss in float32 (BCELoss is not autocast-safe)
+                loss = self.loss_fn(pred_out.float(), targets)
 
                 self.scaler.scale(loss).backward()
                 self.scaler.step(self.optimizer)
@@ -189,7 +200,7 @@ class ForwardBurnTrainer:
                     )
                     # inputs and targets are already on device
 
-                    with autocast(enabled=self.use_amp):
+                    with autocast('cuda', enabled=self.use_amp):
                         pred_out = self.model(inputs)
                         if isinstance(pred_out, (list, tuple)):
                             pred_out = pred_out[0]
@@ -198,7 +209,8 @@ class ForwardBurnTrainer:
                     preds_padded = inputs[:, :13, :, :].detach().clone()
                     preds_padded[:, :2, :, :] = pred_out.detach()
 
-                loss = self.loss_fn(pred_out, targets)
+                # Compute loss in float32 (pred_out may be float16 from autocast)
+                loss = self.loss_fn(pred_out.float(), targets)
                 total_loss += loss.item() * batch.size(0)
                 pbar.set_postfix(val_loss=f"{loss.item():.4f}")
 
