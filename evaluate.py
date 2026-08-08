@@ -75,12 +75,12 @@ def run_inference(model, sample, transform, device, dt, max_t):
         gt_history.append(burned)
     gt_history.append(sample)  # final state
 
-    # Move sample to device for inference
-    sample_device = sample.to(device)
+    # Move sample to device and add batch dimension for inference
+    sample_batched = sample.unsqueeze(0).to(device)
 
     # Predicted rollout using the simulator
     simulator = ForwardBurnSimulator(
-        data=sample_device,
+        data=sample_batched,
         model=model,
         step=fire_burn_step,
         transform=transform,
@@ -90,8 +90,8 @@ def run_inference(model, sample, transform, device, dt, max_t):
     )
     pred_history = simulator.run_to(max_t, return_history=True)
 
-    # Move predictions back to CPU for metrics/visualization
-    pred_history = [p.cpu() if p.is_cuda else p for p in pred_history]
+    # Remove batch dimension and move to CPU for metrics/visualization
+    pred_history = [p.squeeze(0).cpu() for p in pred_history]
 
     return pred_history, gt_history, times
 
@@ -159,7 +159,9 @@ def save_arrival_comparison(pred_history, gt_history, sample_idx, output_dir):
         gt = gt_history[idx] if idx < len(gt_history) else gt_history[-1]
 
         pred_mask = pred[0].numpy() if isinstance(pred, torch.Tensor) else pred[0]
+        pred_mask = np.where(pred_mask == 0, np.nan, pred_mask)
         gt_mask = gt[0].numpy() if isinstance(gt, torch.Tensor) else gt[0]
+        gt_mask = np.where(gt_mask == 0, np.nan, gt_mask)
 
         axes[0, col].imshow(pred_mask, cmap='YlOrRd', vmin=0, vmax=1, aspect='auto')
         axes[0, col].set_title(f"t={idx}", fontsize=8)
@@ -192,7 +194,9 @@ def save_final_arrival_map(pred_history, gt_history, sample_idx, output_dir):
     gt_final = gt_history[-1]
 
     pred_arr = pred_final[1].numpy() if isinstance(pred_final, torch.Tensor) else pred_final[1]
+    pred_arr = np.where(pred_arr == 0, np.nan, pred_arr)
     gt_arr = gt_final[1].numpy() if isinstance(gt_final, torch.Tensor) else gt_final[1]
+    gt_arr = np.where(gt_arr == 0, np.nan, gt_arr)
 
     fig, axes = plt.subplots(1, 3, figsize=(12, 4))
 

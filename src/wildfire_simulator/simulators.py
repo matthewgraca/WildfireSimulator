@@ -34,10 +34,10 @@ class ForwardBurnSimulator:
         self.t0 = t0
 
     def run_to(self, t, return_history=False):
-        input = self.transform(self.data).unsqueeze(0)
+        input = self.transform(self.data)
         history = [self.data]
         dt = self.dt/self.max_t
         for i in np.arange(self.t0/self.max_t, t/self.max_t, dt):
             input = self.step(i, self.model, input)
-            history.append(self.transform.inverse(input).squeeze(0))
+            history.append(self.transform.inverse(input))
         return history if return_history else history[-1]
