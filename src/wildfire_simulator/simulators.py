@@ -44,8 +44,9 @@ class ForwardBurnSimulator:
             input = input.clone()
             input[:, 0:1][not_burnt] = 0.0
             input[:, 1:2][not_burnt] = 0.0
-
-        history = [self.data]
+            history = [self.transform.inverse(input)]
+        else:
+            history = [self.data]
         dt = self.dt/self.max_t
         for i in np.arange(self.t0/self.max_t, t/self.max_t, dt):
             input = self.step(i, self.model, input)
