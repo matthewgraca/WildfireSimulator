@@ -11,11 +11,11 @@ class MinMaxPerChannel:
     def _get_params(self, img):
         C = img.shape[-3]
         if img.dim() == 3:
-            min_vals = self.min_vals.view(C, 1, 1)
-            max_vals = self.max_vals.view(C, 1, 1)
+            min_vals = self.min_vals.to(img.device).view(C, 1, 1)
+            max_vals = self.max_vals.to(img.device).view(C, 1, 1)
         else:
-            min_vals = self.min_vals.view(1, C, 1, 1)
-            max_vals = self.max_vals.view(1, C, 1, 1)
+            min_vals = self.min_vals.to(img.device).view(1, C, 1, 1)
+            max_vals = self.max_vals.to(img.device).view(1, C, 1, 1)
 
         range_vals = max_vals - min_vals
         range_vals = torch.clamp(range_vals, min=1e-8)

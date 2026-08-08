@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 def fire_burn_step(t, model, inputs):
     inputs = copy.deepcopy(inputs)
-    inputs = torch.cat((inputs, torch.full((1, 1, 500, 500), t)), dim=1)
+    inputs = torch.cat((inputs, torch.full((1, 1, 500, 500), t, device=inputs.device)), dim=1)
     inputs = F.pad(inputs, (6, 6, 6, 6, 0, 0), mode='constant', value=0)
     with torch.no_grad():
         pred = model(inputs)[0]
@@ -34,10 +34,10 @@ class ForwardBurnSimulator:
         self.t0 = t0
 
     def run_to(self, t, return_history=False):
-        input = self.transform(self.data)
+        input = self.transform(self.data).unsqueeze(0)
         history = [self.data]
         dt = self.dt/self.max_t
         for i in np.arange(self.t0/self.max_t, t/self.max_t, dt):
             input = self.step(i, self.model, input)
-            history.append(self.transform.inverse(input))
+            history.append(self.transform.inverse(input).squeeze(0))
         return history if return_history else history[-1]
