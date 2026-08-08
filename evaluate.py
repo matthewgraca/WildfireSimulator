@@ -159,15 +159,13 @@ def save_arrival_comparison(pred_history, gt_history, sample_idx, output_dir):
         gt = gt_history[idx] if idx < len(gt_history) else gt_history[-1]
 
         pred_mask = pred[0].numpy() if isinstance(pred, torch.Tensor) else pred[0]
-        pred_mask = np.where(pred_mask == 0, np.nan, pred_mask)
         gt_mask = gt[0].numpy() if isinstance(gt, torch.Tensor) else gt[0]
-        gt_mask = np.where(gt_mask == 0, np.nan, gt_mask)
 
-        axes[0, col].imshow(pred_mask, cmap='YlOrRd', vmin=0, vmax=1, aspect='auto')
+        axes[0, col].imshow(np.where(pred_mask == 0, np.nan, pred_mask), cmap='YlOrRd', vmin=0, vmax=1, aspect='auto')
         axes[0, col].set_title(f"t={idx}", fontsize=8)
         axes[0, col].axis('off')
 
-        axes[1, col].imshow(gt_mask, cmap='YlOrRd', vmin=0, vmax=1, aspect='auto')
+        axes[1, col].imshow(np.where(gt_mask == 0, np.nan, gt_mask), cmap='YlOrRd', vmin=0, vmax=1, aspect='auto')
         axes[1, col].axis('off')
 
         error = np.abs(pred_mask - gt_mask)
@@ -194,18 +192,16 @@ def save_final_arrival_map(pred_history, gt_history, sample_idx, output_dir):
     gt_final = gt_history[-1]
 
     pred_arr = pred_final[1].numpy() if isinstance(pred_final, torch.Tensor) else pred_final[1]
-    pred_arr = np.where(pred_arr == 0, np.nan, pred_arr)
     gt_arr = gt_final[1].numpy() if isinstance(gt_final, torch.Tensor) else gt_final[1]
-    gt_arr = np.where(gt_arr == 0, np.nan, gt_arr)
 
     fig, axes = plt.subplots(1, 3, figsize=(12, 4))
 
-    im0 = axes[0].imshow(pred_arr, cmap='YlOrRd', aspect='auto')
+    im0 = axes[0].imshow(np.where(pred_arr == 0, np.nan, pred_arr), cmap='YlOrRd', aspect='auto')
     axes[0].set_title("Predicted Arrival Time")
     axes[0].axis('off')
     plt.colorbar(im0, ax=axes[0], fraction=0.046)
 
-    im1 = axes[1].imshow(gt_arr, cmap='YlOrRd', aspect='auto')
+    im1 = axes[1].imshow(np.where(gt_arr == 0, np.nan, gt_arr), cmap='YlOrRd', aspect='auto')
     axes[1].set_title("Ground Truth Arrival Time")
     axes[1].axis('off')
     plt.colorbar(im1, ax=axes[1], fraction=0.046)
