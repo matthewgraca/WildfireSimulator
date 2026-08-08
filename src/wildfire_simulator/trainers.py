@@ -39,15 +39,11 @@ class BurnerBatchProcessor:
             self.rng.seed(epoch * 10_000 + batch_idx)
 
         N = true.size(0)
+        H, W = true.shape[-2], true.shape[-1]
 
         # Move true to device once (stays on GPU for all operations)
         true = true.to(self.device)
         pred = pred.to(self.device)
-
-        # Crop pred to match true's spatial dimensions (pred may be padded
-        # from a previous step's model output)
-        H, W = true.shape[-2], true.shape[-1]
-        pred = pred[:, :, :H, :W]
 
         # --- Vectorized burn at time t (inputs) ---
         not_burnt_t = true[:, 1:2, :, :] > t  # (N, 1, H, W)
@@ -63,18 +59,22 @@ class BurnerBatchProcessor:
 
         # --- Scheduled sampling: pick pred or burned ground truth per sample ---
         if self.eval:
-            in_frames = pred
+            # Crop pred back to original spatial dims so the time channel and
+            # final padding behave identically to the non-eval path.
+            in_frames = pred[:, :, :H, :W]
         else:
             prob = self.sampler.get_prob(epoch)
             use_pred_mask = torch.tensor(
                 [self.rng.rand().item() < prob for _ in range(N)],
                 dtype=torch.bool, device=self.device
             ).view(N, 1, 1, 1)
-            in_frames = torch.where(use_pred_mask, pred, burned_t)
+            # Crop pred to true's spatial dimensions for torch.where
+            pred_cropped = pred[:, :, :H, :W]
+            in_frames = torch.where(use_pred_mask, pred_cropped, burned_t)
 
-        # --- Append time channel (on device) ---
+        # --- Append time channel at original spatial dims (on device) ---
         t_channel = torch.full(
-            (N, 1, in_frames.shape[-2], in_frames.shape[-1]), t,
+            (N, 1, H, W), t,
             device=self.device, dtype=true.dtype
         )
         inputs = torch.cat([in_frames, t_channel], dim=1)  # (N, 14, H, W)
