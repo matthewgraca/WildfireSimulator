@@ -160,7 +160,7 @@ class ForwardBurnTrainer:
                         pred_out = pred_out[0]
 
                 # Compute loss in float32 (BCELoss is not autocast-safe)
-                loss = self.loss_fn(pred_out.float(), targets)
+                loss = self.loss_fn(pred_out.float().clamp(0, 1), targets)
 
                 self.scaler.scale(loss).backward()
                 self.scaler.step(self.optimizer)
@@ -210,7 +210,7 @@ class ForwardBurnTrainer:
                     preds_padded[:, :2, :, :] = pred_out.detach()
 
                 # Compute loss in float32 (pred_out may be float16 from autocast)
-                loss = self.loss_fn(pred_out.float(), targets)
+                loss = self.loss_fn(pred_out.float().clamp(0, 1), targets)
                 total_loss += loss.item() * batch.size(0)
                 pbar.set_postfix(val_loss=f"{loss.item():.4f}")
 
