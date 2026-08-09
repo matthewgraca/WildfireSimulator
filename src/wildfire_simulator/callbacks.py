@@ -38,3 +38,13 @@ class TensorBoardCallback:
     def on_validation_end(self, epoch, metrics, model, optimizer):
         self.train_writer.add_scalar("Loss", metrics['train_loss'], epoch)
         self.val_writer.add_scalar("Loss", metrics['val_loss'], epoch)
+
+        # Log per-channel losses if available (from HybridLoss)
+        if 'train_mask_loss' in metrics:
+            self.train_writer.add_scalar("Loss/mask_bce", metrics['train_mask_loss'], epoch)
+        if 'train_arrival_loss' in metrics:
+            self.train_writer.add_scalar("Loss/arrival_mse", metrics['train_arrival_loss'], epoch)
+        if 'val_mask_loss' in metrics:
+            self.val_writer.add_scalar("Loss/mask_bce", metrics['val_mask_loss'], epoch)
+        if 'val_arrival_loss' in metrics:
+            self.val_writer.add_scalar("Loss/arrival_mse", metrics['val_arrival_loss'], epoch)

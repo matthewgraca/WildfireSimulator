@@ -72,7 +72,7 @@ def run_inference(model, sample, transform, device, dt, max_t):
 
     # Ground truth snapshots at each time step (burn in normalized space,
     # then inverse-transform to raw space to match pred_history)
-    times = np.arange(0, max_t, dt)
+    times = np.arange(dt, max_t, dt)
     gt_history = []
     for t in times:
         burned = burner(sample_transformed, t)
@@ -91,7 +91,7 @@ def run_inference(model, sample, transform, device, dt, max_t):
         transform=transform,
         dt=dt * max_t,
         max_t=max_t,
-        t0=0
+        t0=dt * max_t
     )
     pred_history = simulator.run_to(max_t, return_history=True)
 

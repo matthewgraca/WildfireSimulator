@@ -140,7 +140,8 @@ class ForwardBurnTrainer:
             N = batch.size(0)
             preds_padded = torch.zeros(N, 13, 512, 512, device=self.device)
 
-            for t in np.arange(0, self.max_t, self.train_batch_processor.dt):
+            dt = self.train_batch_processor.dt
+            for t in np.arange(dt, self.max_t, dt):
                 inputs, targets = self.train_batch_processor(
                     preds_padded, batch, epoch=epoch, batch_idx=batch_idx, t=t
                 )
@@ -175,9 +176,15 @@ class ForwardBurnTrainer:
             for batch_idx, batch in enumerate(pbar):
                 preds_padded = None
 
-                for t in np.arange(0, self.max_t, self.val_batch_processor.dt):
+                dt = self.val_batch_processor.dt
+                for t in np.arange(dt, self.max_t, dt):
                     if preds_padded is None:
-                        pred_input = batch.to(self.device)
+                        # Initialize with burned state at dt (gives model
+                        # the initial fire seed, matching training behavior)
+                        pred_input = batch.to(self.device).clone()
+                        not_burnt = pred_input[:, 1:2, :, :] > dt
+                        pred_input[:, 0:1][not_burnt] = 0.0
+                        pred_input[:, 1:2][not_burnt] = 0.0
                     else:
                         pred_input = preds_padded
 
@@ -208,8 +215,24 @@ class ForwardBurnTrainer:
         total_epochs = self.epochs
         for epoch in range(self.current_epoch, total_epochs):
             train_loss = self._train_epoch(epoch, total_epochs)
+
+            # Capture training per-channel losses (from last batch) before validation overwrites them
+            train_mask_loss = getattr(self.loss_fn, 'last_mask_loss', None)
+            train_arrival_loss = getattr(self.loss_fn, 'last_arrival_loss', None)
+
             val_loss = self._validate(epoch, total_epochs)
             metrics = {'train_loss': train_loss, 'val_loss': val_loss}
+
+            # Include per-channel losses if the loss function exposes them
+            if train_mask_loss is not None:
+                metrics['train_mask_loss'] = train_mask_loss
+            if train_arrival_loss is not None:
+                metrics['train_arrival_loss'] = train_arrival_loss
+            if hasattr(self.loss_fn, 'last_mask_loss'):
+                metrics['val_mask_loss'] = self.loss_fn.last_mask_loss
+            if hasattr(self.loss_fn, 'last_arrival_loss'):
+                metrics['val_arrival_loss'] = self.loss_fn.last_arrival_loss
+
             for cb in self.callbacks:
                 cb.on_validation_end(epoch=epoch, metrics=metrics, model=self.model, optimizer=self.optimizer)
             self.current_epoch += 1

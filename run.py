@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
 from torch.utils.tensorboard import SummaryWriter
 
@@ -11,6 +10,7 @@ from wildfire_simulator.dataloader import TrialCollection, TrialFileLoader, Wild
 from wildfire_simulator.datasets import WildfireDataset, TransformedDataset
 from wildfire_simulator.transforms import MinMaxPerChannel
 from wildfire_simulator.scheduled_sampler import ScheduledSampler
+from wildfire_simulator.losses import HybridLoss
 from wildfire_simulator.utils import ScalarRNG
 
 def main():
@@ -83,8 +83,8 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     burner = ForwardBurnProcess()
-    # sampler = ScheduledSampler(k=0.1, t0=40)
-    sampler = ConstSampler(0.0)
+    sampler = ScheduledSampler(k=0.2, t0=10)
+    # sampler = ConstSampler(0.0)
     rng = ScalarRNG()
     train_batch_processor = BurnerBatchProcessor(
         burner=burner,
@@ -104,7 +104,7 @@ def main():
     trainer = ForwardBurnTrainer(
         model=model,
         optimizer=optimizer,
-        loss_fn=nn.BCELoss(),
+        loss_fn=HybridLoss(mask_weight=1.0, arrival_weight=1.0),
         train_loader=train_loader,
         val_loader=val_loader,
         train_batch_processor=train_batch_processor,
