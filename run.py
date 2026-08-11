@@ -1,3 +1,6 @@
+import argparse
+import os
+
 import torch
 from torch.utils.data import DataLoader, random_split
 from torch.utils.tensorboard import SummaryWriter
@@ -14,6 +17,14 @@ from wildfire_simulator.losses import HybridLoss
 from wildfire_simulator.utils import ScalarRNG
 
 def main():
+    parser = argparse.ArgumentParser(description="Train wildfire surrogate model")
+    parser.add_argument('--output-dir', type=str, default='.',
+                        help='Directory to save checkpoints and training logs (default: current directory)')
+    args = parser.parse_args()
+
+    output_dir = args.output_dir
+    os.makedirs(output_dir, exist_ok=True)
+
     dataloader = WildfireDataLoader(TrialCollection(TrialFileLoader()))
 
     dataset = WildfireDataset(dataloader)
@@ -57,11 +68,11 @@ def main():
     checkpoint_cb = ModelCheckpoint(
         monitor='val_loss',
         mode='min',
-        filepath='./checkpoints/best-model-{epoch:02d}-{val_loss:.2f}.pt'
+        filepath=os.path.join(output_dir, 'checkpoints/best-model-{epoch:02d}-{val_loss:.2f}.pt')
     )
 
-    train_writer = SummaryWriter("training/train")
-    val_writer = SummaryWriter("training/val")
+    train_writer = SummaryWriter(os.path.join(output_dir, "training/train"))
+    val_writer = SummaryWriter(os.path.join(output_dir, "training/val"))
 
     tensorboard_cb = TensorBoardCallback(
         train_writer=train_writer,
