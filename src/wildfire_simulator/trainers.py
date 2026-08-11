@@ -133,6 +133,7 @@ class ForwardBurnTrainer:
         n_samples = len(self.train_loader.dataset)
 
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
+        samples_seen = 0
         for batch_idx, batch in enumerate(pbar):
             num_steps = int(self.max_t / self.train_batch_processor.dt)
 
@@ -162,7 +163,9 @@ class ForwardBurnTrainer:
                 preds_padded[:, :2, :, :] = pred_out.detach()
 
                 total_loss += loss.item() * N / num_steps
-                pbar.set_postfix(loss=f"{loss.item():.4f}")
+
+            samples_seen += N
+            pbar.set_postfix(loss=f"{total_loss / samples_seen:.4f}")
 
         return total_loss / n_samples
 
@@ -172,6 +175,7 @@ class ForwardBurnTrainer:
         n_samples = len(self.val_loader.dataset)
 
         pbar = tqdm(self.val_loader, desc="Validating")
+        samples_seen = 0
         with torch.no_grad():
             for batch_idx, batch in enumerate(pbar):
                 preds_padded = None
@@ -212,7 +216,8 @@ class ForwardBurnTrainer:
                     preds_padded[:, :2, :, :] = pred_out.detach()
 
                 total_loss += (batch_loss / num_steps) * batch.size(0)
-                pbar.set_postfix(val_loss=f"{batch_loss / num_steps:.4f}")
+                samples_seen += batch.size(0)
+                pbar.set_postfix(val_loss=f"{total_loss / samples_seen:.4f}")
 
         return total_loss / n_samples
 
