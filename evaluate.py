@@ -107,9 +107,7 @@ def compute_metrics(pred_frames, gt_frames):
     Compares channel 0 (fire mask) and channel 1 (arrival time).
     """
     metrics = {
-        'mse_mask': [],
         'mse_arrival': [],
-        'mae_mask': [],
         'mae_arrival': [],
         'iou': [],
         'dice': [],
@@ -124,9 +122,7 @@ def compute_metrics(pred_frames, gt_frames):
         gt_arr = gt[1].numpy() if isinstance(gt, torch.Tensor) else gt[1]
 
         # MSE / MAE on continuous values
-        metrics['mse_mask'].append(float(np.mean((pred_mask - gt_mask) ** 2)))
         metrics['mse_arrival'].append(float(np.mean((pred_arr - gt_arr) ** 2)))
-        metrics['mae_mask'].append(float(np.mean(np.abs(pred_mask - gt_mask))))
         metrics['mae_arrival'].append(float(np.mean(np.abs(pred_arr - gt_arr))))
 
         # Binarize masks (threshold at 0.5) for classification metrics
@@ -227,7 +223,8 @@ def save_final_arrival_map(pred_history, gt_history, sample_idx, output_dir):
 
 
 def plot_training_curves(logdir, output_dir):
-    """Load TensorBoard logs and plot training/validation loss curves."""
+    """Load TensorBoard logs and plot training/validation loss curves.
+    Automatically detects and plots per-channel losses if available."""
     try:
         from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
     except ImportError:
@@ -254,18 +251,64 @@ def plot_training_curves(logdir, output_dir):
     val_steps = [s.step for s in val_scalars]
     val_values = [s.value for s in val_scalars]
 
-    # Plot
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(train_steps, train_values, label='Train Loss', linewidth=1.5)
-    ax.plot(val_steps, val_values, label='Val Loss', linewidth=1.5)
-    ax.set_xlabel('Epoch')
-    ax.set_ylabel('Loss (BCE)')
-    ax.set_title('Training & Validation Loss')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
+    # Detect per-channel losses
+    available_tags = train_acc.Tags().get('scalars', [])
+    has_component_losses = 'Loss/mask_bce' in available_tags or 'Loss/arrival_mse' in available_tags
 
-    if len(train_values) > 0 and max(train_values) / (min(train_values) + 1e-10) > 100:
-        ax.set_yscale('log')
+    if has_component_losses:
+        # Plot combined + per-channel on separate subplots
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+        # Combined loss
+        axes[0].plot(train_steps, train_values, label='Train', linewidth=1.5)
+        axes[0].plot(val_steps, val_values, label='Val', linewidth=1.5)
+        axes[0].set_xlabel('Epoch')
+        axes[0].set_ylabel('Loss')
+        axes[0].set_title('Combined Loss')
+        axes[0].legend()
+        axes[0].grid(True, alpha=0.3)
+
+        # Mask BCE
+        if 'Loss/mask_bce' in available_tags:
+            train_mask = train_acc.Scalars("Loss/mask_bce")
+            val_mask = val_acc.Scalars("Loss/mask_bce") if 'Loss/mask_bce' in val_acc.Tags().get('scalars', []) else []
+            axes[1].plot([s.step for s in train_mask], [s.value for s in train_mask], label='Train', linewidth=1.5)
+            if val_mask:
+                axes[1].plot([s.step for s in val_mask], [s.value for s in val_mask], label='Val', linewidth=1.5)
+            axes[1].set_xlabel('Epoch')
+            axes[1].set_ylabel('BCE')
+            axes[1].set_title('Mask Loss (BCE)')
+            axes[1].legend()
+            axes[1].grid(True, alpha=0.3)
+
+        # Arrival MSE
+        if 'Loss/arrival_mse' in available_tags:
+            train_arr = train_acc.Scalars("Loss/arrival_mse")
+            val_arr = val_acc.Scalars("Loss/arrival_mse") if 'Loss/arrival_mse' in val_acc.Tags().get('scalars', []) else []
+            axes[2].plot([s.step for s in train_arr], [s.value for s in train_arr], label='Train', linewidth=1.5)
+            if val_arr:
+                axes[2].plot([s.step for s in val_arr], [s.value for s in val_arr], label='Val', linewidth=1.5)
+            axes[2].set_xlabel('Epoch')
+            axes[2].set_ylabel('MSE')
+            axes[2].set_title('Arrival Time Loss (MSE)')
+            axes[2].legend()
+            axes[2].grid(True, alpha=0.3)
+
+        fig.suptitle('Training & Validation Loss', fontsize=13)
+        fig.tight_layout()
+    else:
+        # Single combined plot (legacy / BCELoss only)
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot(train_steps, train_values, label='Train Loss', linewidth=1.5)
+        ax.plot(val_steps, val_values, label='Val Loss', linewidth=1.5)
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Loss')
+        ax.set_title('Training & Validation Loss')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+        if len(train_values) > 0 and max(train_values) / (min(train_values) + 1e-10) > 100:
+            ax.set_yscale('log')
 
     filepath = os.path.join(output_dir, "training_curves.png")
     Path(filepath).parent.mkdir(parents=True, exist_ok=True)
@@ -299,7 +342,7 @@ def build_per_sample_table(all_metrics):
     for i, m in enumerate(all_metrics):
         rows.append([
             i, m['iou'], m['dice'], m['precision'], m['recall'],
-            m['mae_mask'], m['mae_arrival']
+            m['mae_arrival']
         ])
     return format_table(headers, rows)
 
@@ -307,7 +350,7 @@ def build_per_sample_table(all_metrics):
 def build_summary_table(all_metrics):
     """Build a summary table with mean and std across all samples."""
     headers = ["Metric", "Mean", "Std", "Min", "Max"]
-    keys = ['mse_mask', 'mae_mask', 'mse_arrival', 'mae_arrival',
+    keys = ['mse_arrival', 'mae_arrival',
             'iou', 'dice', 'precision', 'recall']
     rows = []
     for key in keys:
@@ -335,7 +378,7 @@ def build_training_table(train_data, val_data):
 
 def save_metrics_csv(all_metrics, filepath):
     """Save per-sample metrics as CSV."""
-    keys = ['mse_mask', 'mae_mask', 'mse_arrival', 'mae_arrival',
+    keys = ['mse_arrival', 'mae_arrival',
             'iou', 'dice', 'precision', 'recall']
     with open(filepath, 'w', newline='') as f:
         writer = csv.writer(f)
