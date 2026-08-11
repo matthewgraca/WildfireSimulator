@@ -177,6 +177,9 @@ class ForwardBurnTrainer:
                 preds_padded = None
 
                 dt = self.val_batch_processor.dt
+                num_steps = len(np.arange(dt, self.max_t, dt))
+                batch_loss = 0.0
+
                 for t in np.arange(dt, self.max_t, dt):
                     if preds_padded is None:
                         # Initialize with burned state at dt (gives model
@@ -201,13 +204,15 @@ class ForwardBurnTrainer:
                     if isinstance(pred_out, (list, tuple)):
                         pred_out = pred_out[0]
 
+                    loss = self.loss_fn(pred_out, targets)
+                    batch_loss += loss.item()
+
                     # Update preds for next time step (stay on device)
                     preds_padded = inputs[:, :13, :, :].detach().clone()
                     preds_padded[:, :2, :, :] = pred_out.detach()
 
-                loss = self.loss_fn(pred_out, targets)
-                total_loss += loss.item() * batch.size(0)
-                pbar.set_postfix(val_loss=f"{loss.item():.4f}")
+                total_loss += (batch_loss / num_steps) * batch.size(0)
+                pbar.set_postfix(val_loss=f"{batch_loss / num_steps:.4f}")
 
         return total_loss / n_samples
 
