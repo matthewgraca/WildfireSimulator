@@ -61,7 +61,7 @@ def check_overfit(model, dataset, transform, device, dt, max_t):
     ).to(device)
 
     optimizer = torch.optim.AdamW(model_copy.parameters(), 5e-4, weight_decay=1e-4)
-    loss_fn = HybridLoss(mask_weight=1.0, arrival_weight=1.0)
+    loss_fn = HybridLoss(mask_weight=1.0, arrival_weight=10.0)
 
     burner = ForwardBurnProcess()
     rng = ScalarRNG()
@@ -112,7 +112,7 @@ def check_per_step_loss(model, dataset, transform, device, dt, max_t):
     batch_processor = BurnerBatchProcessor(
         burner=burner, dt=dt, eval=True, device=device
     )
-    loss_fn = HybridLoss(mask_weight=1.0, arrival_weight=1.0)
+    loss_fn = HybridLoss(mask_weight=1.0, arrival_weight=10.0)
 
     model.eval()
     preds_padded = None
@@ -169,7 +169,7 @@ def check_loss_ratio(model, dataset, transform, device, dt, max_t):
     batch_processor = BurnerBatchProcessor(
         burner=burner, dt=dt, eval=True, device=device
     )
-    loss_fn = HybridLoss(mask_weight=1.0, arrival_weight=1.0)
+    loss_fn = HybridLoss(mask_weight=1.0, arrival_weight=10.0)
 
     model.eval()
     N = batch.size(0)
@@ -219,7 +219,7 @@ def check_gradients(model, dataset, transform, device, dt, max_t):
         burner=burner, dt=dt, eval=False,
         sampler=ConstSampler(0.0), rng=rng, device=device
     )
-    loss_fn = HybridLoss(mask_weight=1.0, arrival_weight=1.0)
+    loss_fn = HybridLoss(mask_weight=1.0, arrival_weight=10.0)
 
     model.train()
     optimizer = torch.optim.AdamW(model.parameters(), 5e-4)

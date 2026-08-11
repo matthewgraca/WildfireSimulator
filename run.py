@@ -94,7 +94,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     burner = ForwardBurnProcess()
-    sampler = ScheduledSampler(k=0.2, t0=10)
+    sampler = ScheduledSampler(k=0.1, t0=30)
     # sampler = ConstSampler(0.0)
     rng = ScalarRNG()
     train_batch_processor = BurnerBatchProcessor(
@@ -115,7 +115,7 @@ def main():
     trainer = ForwardBurnTrainer(
         model=model,
         optimizer=optimizer,
-        loss_fn=HybridLoss(mask_weight=1.0, arrival_weight=1.0),
+        loss_fn=HybridLoss(mask_weight=1.0, arrival_weight=10.0),
         train_loader=train_loader,
         val_loader=val_loader,
         train_batch_processor=train_batch_processor,
