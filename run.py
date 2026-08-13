@@ -15,13 +15,17 @@ from wildfire_simulator.transforms import MinMaxPerChannel
 from wildfire_simulator.scheduled_sampler import ScheduledSampler
 from wildfire_simulator.losses import HybridLoss
 from wildfire_simulator.utils import ScalarRNG
+from wildfire_simulator.config import load_config
 
 def main():
     parser = argparse.ArgumentParser(description="Train wildfire surrogate model")
     parser.add_argument('--output-dir', type=str, default='.',
                         help='Directory to save checkpoints and training logs (default: current directory)')
+    parser.add_argument('--config', type=str, default=None,
+                        help='Path to config file (default: config.yaml in project root)')
     args = parser.parse_args()
 
+    config = load_config(args.config)
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
@@ -94,12 +98,15 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     burner = ForwardBurnProcess()
-    sampler = ScheduledSampler(k=0.1, t0=30)
+    sampler = ScheduledSampler(
+        k=config['scheduled_sampling']['k'],
+        t0=config['scheduled_sampling']['t0']
+    )
     # sampler = ConstSampler(0.0)
     rng = ScalarRNG()
     train_batch_processor = BurnerBatchProcessor(
         burner=burner,
-        dt=1/48,
+        dt=config['dt'],
         eval=False,
         sampler=sampler,
         rng=rng,
@@ -107,7 +114,7 @@ def main():
     )
     val_batch_processor = BurnerBatchProcessor(
         burner=burner,
-        dt=1/48,
+        dt=config['dt'],
         eval=True,
         device=device
     )
@@ -122,7 +129,7 @@ def main():
         val_batch_processor=val_batch_processor,
         callbacks=[checkpoint_cb, tensorboard_cb],
         epochs=100,
-        max_t=1,
+        max_t=config['max_t'],
         device=device,
     )
 

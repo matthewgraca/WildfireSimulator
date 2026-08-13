@@ -28,6 +28,7 @@ from wildfire_simulator.simulators import ForwardBurnSimulator, fire_burn_step
 from wildfire_simulator.dataloader import TrialCollection, TrialFileLoader, WildfireDataLoader
 from wildfire_simulator.datasets import WildfireDataset, TransformedDataset
 from wildfire_simulator.transforms import MinMaxPerChannel
+from wildfire_simulator.config import load_config
 
 
 def load_model(checkpoint_path, device):
@@ -337,7 +338,7 @@ def format_table(headers, rows, col_width=14):
 
 def build_per_sample_table(all_metrics):
     """Build a table with one row per sample."""
-    headers = ["Sample", "IoU", "Dice", "Precision", "Recall", "MAE Mask", "MAE Arrival"]
+    headers = ["Sample", "IoU", "Dice", "Precision", "Recall", "MAE Arrival"]
     rows = []
     for i, m in enumerate(all_metrics):
         rows.append([
@@ -397,11 +398,18 @@ def main():
                         help='TensorBoard log directory')
     parser.add_argument('--num_samples', type=int, default=10,
                         help='Number of test samples to evaluate')
-    parser.add_argument('--dt', type=float, default=1/48,
-                        help='Time step for rollout (should match training)')
-    parser.add_argument('--max_t', type=float, default=1.0,
-                        help='Maximum time for rollout (should match training)')
+    parser.add_argument('--config', type=str, default=None,
+                        help='Path to config file (default: config.yaml in project root)')
+    parser.add_argument('--dt', type=float, default=None,
+                        help='Time step for rollout (default: from config)')
+    parser.add_argument('--max_t', type=float, default=None,
+                        help='Maximum time for rollout (default: from config)')
     args = parser.parse_args()
+
+    config = load_config(args.config)
+    # CLI args override config if provided
+    dt = args.dt if args.dt is not None else config['dt']
+    max_t = args.max_t if args.max_t is not None else config['max_t']
 
     # Setup
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -443,7 +451,7 @@ def main():
         print(f"  [{i + 1:3d}/{num_samples}] Running rollout...", end=" ", flush=True)
 
         pred_history, gt_history, times = run_inference(
-            model, sample, transform, device, args.dt, args.max_t
+            model, sample, transform, device, dt, max_t
         )
 
         # Align lengths
@@ -479,7 +487,7 @@ def main():
         f.write(f"Checkpoint: {args.checkpoint}\n")
         f.write(f"Epoch: {ckpt_epoch}\n")
         f.write(f"Samples evaluated: {num_samples}\n")
-        f.write(f"dt: {args.dt}, max_t: {args.max_t}\n\n")
+        f.write(f"dt: {dt}, max_t: {max_t}\n\n")
         f.write("SUMMARY\n")
         f.write(build_summary_table(all_metrics) + "\n\n")
         f.write("PER-SAMPLE\n")

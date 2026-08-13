@@ -1,0 +1,15 @@
+# Wildfire Simulator Configuration
+
+# Time step size (fraction of max_t per step)
+# Examples: "1/48" gives 48 steps, "1/8" gives 8 steps
+dt: "1/8"
+
+# Maximum simulation time (normalized)
+max_t: 1.0
+
+# Scheduled sampling parameters
+# k: steepness of sigmoid transition
+# t0: epoch at which probability = 50%
+scheduled_sampling:
+  k: 0.1
+  t0: 30
