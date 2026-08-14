@@ -78,8 +78,8 @@ class BurnerBatchProcessor:
         )
         inputs = torch.cat([in_frames, t_channel], dim=1)  # (N, 14, H, W)
 
-        # --- Extract target (channels 0 and 1 of burned_dt) ---
-        targets = burned_dt[:, :2]  # (N, 2, H, W)
+        # --- Extract target (mask channel only of burned_dt) ---
+        targets = burned_dt[:, 0:1]  # (N, 1, H, W)
 
         # --- Pad spatial dims to multiple of 32 ---
         inputs, _, _ = _pad_to_multiple(inputs, multiple=32)
@@ -160,9 +160,12 @@ class ForwardBurnTrainer:
 
                 # Update preds for next time step (stay on device)
                 preds_padded = inputs[:, :13, :, :].detach().clone()
-                preds_padded[:, :2, :, :] = pred_out.detach()
-                # Threshold mask channel to binary (prevents fuzzy values from compounding)
-                preds_padded[:, 0:1, :, :] = (preds_padded[:, 0:1, :, :] > 0.5).float()
+                # Threshold predicted mask to binary
+                pred_mask = (pred_out[:, 0:1].detach() > 0.5).float()
+                preds_padded[:, 0:1, :, :] = pred_mask
+                # Deterministic FAT update: newly burned pixels get arrival time = t + dt
+                newly_burned = (pred_mask == 1) & (preds_padded[:, 1:2, :, :] == 0)
+                preds_padded[:, 1:2, :, :][newly_burned] = t + dt
 
                 total_loss += loss.item() * N / num_steps
 
@@ -215,9 +218,12 @@ class ForwardBurnTrainer:
 
                     # Update preds for next time step (stay on device)
                     preds_padded = inputs[:, :13, :, :].detach().clone()
-                    preds_padded[:, :2, :, :] = pred_out.detach()
-                    # Threshold mask channel to binary
-                    preds_padded[:, 0:1, :, :] = (preds_padded[:, 0:1, :, :] > 0.5).float()
+                    # Threshold predicted mask to binary
+                    pred_mask = (pred_out[:, 0:1].detach() > 0.5).float()
+                    preds_padded[:, 0:1, :, :] = pred_mask
+                    # Deterministic FAT update: newly burned pixels get arrival time = t + dt
+                    newly_burned = (pred_mask == 1) & (preds_padded[:, 1:2, :, :] == 0)
+                    preds_padded[:, 1:2, :, :][newly_burned] = t + dt
 
                 total_loss += (batch_loss / num_steps) * batch.size(0)
                 samples_seen += batch.size(0)

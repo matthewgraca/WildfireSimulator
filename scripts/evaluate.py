@@ -38,7 +38,7 @@ def load_model(checkpoint_path, device):
     """Load model from checkpoint."""
     model = MK_UNet_Regression(
         in_channels=14,
-        out_channels=2,
+        out_channels=1,
         channels=[16, 32, 64, 96, 160],
         final_activation='sigmoid'
     )

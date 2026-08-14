@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
 from torch.utils.tensorboard import SummaryWriter
 
@@ -17,7 +18,6 @@ from wildfire_simulator.dataloader import TrialCollection, TrialFileLoader, Wild
 from wildfire_simulator.datasets import WildfireDataset, TransformedDataset
 from wildfire_simulator.transforms import MinMaxPerChannel
 from wildfire_simulator.scheduled_sampler import ScheduledSampler
-from wildfire_simulator.losses import HybridLoss
 from wildfire_simulator.utils import ScalarRNG
 from wildfire_simulator.config import load_config
 
@@ -68,7 +68,7 @@ def main():
     
     model = MK_UNet_Regression(
         in_channels=14,
-        out_channels=2,
+        out_channels=1,
         channels=[16, 32, 64, 96, 160],
         final_activation='sigmoid'
     )
@@ -126,7 +126,7 @@ def main():
     trainer = ForwardBurnTrainer(
         model=model,
         optimizer=optimizer,
-        loss_fn=HybridLoss(mask_weight=1.0, arrival_weight=10.0),
+        loss_fn=nn.BCELoss(),
         train_loader=train_loader,
         val_loader=val_loader,
         train_batch_processor=train_batch_processor,

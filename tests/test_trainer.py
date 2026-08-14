@@ -62,7 +62,8 @@ def test_batch_processor(dataloader):
     output_tensor_expected = torch.load("tests/baseline/batch_processor/output_forced.pt")
 
     assert (input_tensor == input_tensor_expected).all()
-    assert (output_tensor == output_tensor_expected).all()
+    # Target is now only mask channel (channel 0)
+    assert (output_tensor == output_tensor_expected[:, 0:1]).all()
 
     rng = DummyScalarRNG(0.2)
     batch_processor = BurnerBatchProcessor(
@@ -94,8 +95,8 @@ def test_batch_processor(dataloader):
 
     assert (input_tensor == input_tensor_expected).all()
     assert (input_tensor2 == input_tensor_expected).all()
-    assert (output_tensor == output_tensor_expected).all()
-    assert (output_tensor2 == output_tensor_expected).all()
+    assert (output_tensor == output_tensor_expected[:, 0:1]).all()
+    assert (output_tensor2 == output_tensor_expected[:, 0:1]).all()
 
 
 def test_trainer(dataloader):
@@ -132,7 +133,7 @@ def test_trainer(dataloader):
     def get_trainer(epochs):
         model = MK_UNet_Regression(
             in_channels=14,
-            out_channels=2,
+            out_channels=1,
             channels=[16, 32, 64, 96, 160],
             final_activation='sigmoid'
         )

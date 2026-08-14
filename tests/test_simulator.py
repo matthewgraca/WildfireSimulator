@@ -10,14 +10,16 @@ def test_burn_step():
     inputs = torch.zeros((1, 13, 500, 500))
     inputs_copy = copy.deepcopy(inputs)
     def model(data):
-        chan1 = torch.full((1, 1, 512, 512), 1.0)
-        chan2 = torch.full((1, 1, 512, 512), 2.0)
-        return [torch.cat((chan1, chan2), dim=1)]
-    outputs = fire_burn_step(0, model, inputs)
+        # Model now outputs 1 channel (mask only)
+        return [torch.full((1, 1, 512, 512), 0.8)]
+    dt = 0.5
+    outputs = fire_burn_step(0, model, inputs, dt=dt)
     assert (inputs == inputs_copy).all()
     assert outputs.shape == (1, 13, 500, 500)
+    # Mask channel: 0.8 > 0.5 → thresholded to 1.0
     assert (outputs[0][0] == 1.0).all()
-    assert (outputs[0][1] == 2.0).all()
+    # FAT channel: all pixels newly burned → assigned t + dt = 0 + 0.5 = 0.5
+    assert (outputs[0][1] == 0.5).all()
 
 
 def test_simulator():
@@ -56,7 +58,8 @@ def test_simulator_integration():
     inputs = torch.zeros((1, 13, 500, 500))
 
     def model(data):
-        return torch.full((1, 2, 512, 512), 2.0)
+        # Model outputs 1 channel (mask), value 0.8 (> 0.5 → burns)
+        return torch.full((1, 1, 512, 512), 0.8)
 
     transform = MinMaxPerChannel(np.full((13,), 0.0), np.full((13,), 2.0))
 
@@ -71,8 +74,9 @@ def test_simulator_integration():
 
     output = simulator.run_to(2)
 
-    # Channel 0 (mask) is thresholded: model outputs 2.0 > 0.5 → 1.0, inverse transformed → 2.0
-    # Channel 1 (arrival) passes through: model outputs 2.0, inverse transformed → 4.0
+    # Channel 0 (mask): 0.8 > 0.5 → 1.0, inverse transformed (×2) → 2.0
     assert (output[:, 0:1] == 2).all()
-    assert (output[:, 1:2] == 4).all()
+    # Channel 1 (FAT): deterministically set to t+dt=0.5 at first step,
+    # inverse transformed (×2) → 1.0
+    assert (output[:, 1:2] == 1).all()
 

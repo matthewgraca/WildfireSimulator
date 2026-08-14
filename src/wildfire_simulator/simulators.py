@@ -3,14 +3,24 @@ import copy
 import numpy as np
 import torch.nn.functional as F
 
-def fire_burn_step(t, model, inputs):
+def fire_burn_step(t, model, inputs, dt=None):
     inputs = copy.deepcopy(inputs)
     inputs = torch.cat((inputs, torch.full((1, 1, 500, 500), t, device=inputs.device)), dim=1)
     inputs = F.pad(inputs, (6, 6, 6, 6, 0, 0), mode='constant', value=0)
     with torch.no_grad():
-        pred = model(inputs)[0]
-        inputs[0][0] = (pred[0][0].detach() > 0.5).float()  # threshold mask to binary
-        inputs[0][1] = pred[0][1].detach()
+        pred = model(inputs)
+        if isinstance(pred, (list, tuple)):
+            pred = pred[0]
+        # pred shape: (1, C, H, W) where C=1 for mask-only model
+        # Threshold mask to binary
+        pred_mask = (pred[0, 0].detach() > 0.5).float()
+        # Update mask in unpadded region
+        inputs[0, 0, 6:-6, 6:-6] = pred_mask[6:-6, 6:-6]
+        # Deterministic FAT update: newly burned pixels get arrival time = t + dt
+        if dt is not None:
+            current_fat = inputs[0, 1, 6:-6, 6:-6]
+            newly_burned = (pred_mask[6:-6, 6:-6] == 1) & (current_fat == 0)
+            inputs[0, 1, 6:-6, 6:-6][newly_burned] = t + dt
     return inputs[:, :13, 6:-6, 6:-6]
 
 
@@ -49,6 +59,9 @@ class ForwardBurnSimulator:
             history = [self.data]
         dt = self.dt/self.max_t
         for i in np.arange(self.t0/self.max_t, t/self.max_t, dt):
-            input = self.step(i, self.model, input)
+            try:
+                input = self.step(i, self.model, input, dt=dt)
+            except TypeError:
+                input = self.step(i, self.model, input)
             history.append(self.transform.inverse(input))
         return history if return_history else history[-1]
