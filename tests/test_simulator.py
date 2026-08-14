@@ -71,5 +71,8 @@ def test_simulator_integration():
 
     output = simulator.run_to(2)
 
-    assert (output[:, :2] == 4).all()
+    # Channel 0 (mask) is thresholded: model outputs 2.0 > 0.5 → 1.0, inverse transformed → 2.0
+    # Channel 1 (arrival) passes through: model outputs 2.0, inverse transformed → 4.0
+    assert (output[:, 0:1] == 2).all()
+    assert (output[:, 1:2] == 4).all()
 

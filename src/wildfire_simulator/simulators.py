@@ -9,7 +9,7 @@ def fire_burn_step(t, model, inputs):
     inputs = F.pad(inputs, (6, 6, 6, 6, 0, 0), mode='constant', value=0)
     with torch.no_grad():
         pred = model(inputs)[0]
-        inputs[0][0] = pred[0][0].detach()
+        inputs[0][0] = (pred[0][0].detach() > 0.5).float()  # threshold mask to binary
         inputs[0][1] = pred[0][1].detach()
     return inputs[:, :13, 6:-6, 6:-6]
 

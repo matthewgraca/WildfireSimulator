@@ -161,6 +161,8 @@ class ForwardBurnTrainer:
                 # Update preds for next time step (stay on device)
                 preds_padded = inputs[:, :13, :, :].detach().clone()
                 preds_padded[:, :2, :, :] = pred_out.detach()
+                # Threshold mask channel to binary (prevents fuzzy values from compounding)
+                preds_padded[:, 0:1, :, :] = (preds_padded[:, 0:1, :, :] > 0.5).float()
 
                 total_loss += loss.item() * N / num_steps
 
@@ -214,6 +216,8 @@ class ForwardBurnTrainer:
                     # Update preds for next time step (stay on device)
                     preds_padded = inputs[:, :13, :, :].detach().clone()
                     preds_padded[:, :2, :, :] = pred_out.detach()
+                    # Threshold mask channel to binary
+                    preds_padded[:, 0:1, :, :] = (preds_padded[:, 0:1, :, :] > 0.5).float()
 
                 total_loss += (batch_loss / num_steps) * batch.size(0)
                 samples_seen += batch.size(0)
