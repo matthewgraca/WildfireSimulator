@@ -118,6 +118,88 @@ def main():
     plt.close(fig)
     print(f"\n  Saved: {output_path}")
 
+    # --- Static channels visualization ---
+    static_output = output_path.parent / (output_path.stem + "_channels" + output_path.suffix)
+    plot_static_channels(sample, static_output)
+    print(f"  Saved: {static_output}")
+
+
+def plot_static_channels(sample, output_path):
+    """Visualize static landscape channels (2-12) with a wind quiver plot."""
+    # Channel mapping:
+    # 2: Elevation, 3: Slope, 4: Aspect, 5: Fuel model (FBFM40)
+    # 6: Canopy cover, 7: Stand height, 8: Canopy base height, 9: Canopy bulk density
+    # 10: Wind speed (scalar), 11: Wind direction (scalar), 12: Foliar moisture (scalar)
+
+    channel_info = [
+        (2, "Elevation", "terrain", "m"),
+        (3, "Slope", "YlOrBr", "°"),
+        (4, "Aspect", "hsv", "°"),
+        (5, "Fuel Model\n(FBFM40)", "Set3", ""),
+        (6, "Canopy Cover", "Greens", "%"),
+        (7, "Stand Height", "Greens", "m"),
+        (8, "Canopy Base\nHeight", "Greens", "m"),
+        (9, "Canopy Bulk\nDensity", "Greens", "kg/m³"),
+    ]
+
+    fig, axes = plt.subplots(2, 5, figsize=(20, 8))
+
+    # Plot spatial channels (2-9) in first 8 panels
+    for i, (ch_idx, name, cmap, unit) in enumerate(channel_info):
+        row, col = divmod(i, 5)
+        ax = axes[row, col]
+        data = sample[ch_idx].numpy()
+
+        im = ax.imshow(data, cmap=cmap, aspect='equal')
+        ax.set_title(f"{name}", fontsize=10)
+        ax.axis('off')
+
+        # Add colorbar
+        cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        if unit:
+            cbar.set_label(unit, fontsize=8)
+
+    # Wind quiver plot (panel at row 1, col 3)
+    ax_wind = axes[1, 3]
+    wind_speed = sample[10, 0, 0].item()  # scalar (constant across spatial)
+    wind_dir = sample[11, 0, 0].item()    # degrees, meteorological convention
+
+    # Meteorological wind direction: direction wind comes FROM, measured clockwise from north
+    # Convert to math angle (direction wind blows TO, counterclockwise from east)
+    wind_dir_rad = np.radians(270 - wind_dir)
+    u = wind_speed * np.cos(wind_dir_rad)
+    v = wind_speed * np.sin(wind_dir_rad)
+
+    # Create a grid of arrows showing uniform wind field
+    grid_size = 10
+    x = np.linspace(0, 500, grid_size)
+    y = np.linspace(0, 500, grid_size)
+    X, Y = np.meshgrid(x, y)
+    U = np.full_like(X, u)
+    V = np.full_like(Y, v)
+
+    ax_wind.quiver(X, Y, U, V, scale=wind_speed * 15, color='navy', alpha=0.7)
+    ax_wind.set_xlim(0, 500)
+    ax_wind.set_ylim(500, 0)  # flip y to match image coordinates
+    ax_wind.set_aspect('equal')
+    ax_wind.set_title(f"Wind\n{wind_speed:.0f} units @ {wind_dir:.0f}°", fontsize=10)
+    ax_wind.axis('off')
+
+    # Foliar moisture (panel at row 1, col 4)
+    ax_fm = axes[1, 4]
+    foliar_moisture = sample[12, 0, 0].item()
+    ax_fm.text(0.5, 0.5, f"Foliar\nMoisture\n\n{foliar_moisture:.0f}%",
+               ha='center', va='center', fontsize=14,
+               transform=ax_fm.transAxes)
+    ax_fm.axis('off')
+
+    fig.suptitle("Static Input Channels (Landscape Features)", fontsize=13)
+    fig.tight_layout()
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+
 
 if __name__ == "__main__":
     main()
