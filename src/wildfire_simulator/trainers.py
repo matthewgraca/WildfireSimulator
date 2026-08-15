@@ -236,22 +236,24 @@ class ForwardBurnTrainer:
         for epoch in range(self.current_epoch, total_epochs):
             train_loss = self._train_epoch(epoch, total_epochs)
 
-            # Capture training per-channel losses (from last batch) before validation overwrites them
-            train_mask_loss = getattr(self.loss_fn, 'last_mask_loss', None)
-            train_arrival_loss = getattr(self.loss_fn, 'last_arrival_loss', None)
+            # Capture per-component losses from training (last batch)
+            train_components = {}
+            for attr in ['last_bce', 'last_dice', 'last_focal', 'last_mask_loss', 'last_arrival_loss']:
+                val = getattr(self.loss_fn, attr, None)
+                if val is not None:
+                    key = attr.replace('last_', '')
+                    train_components[f'train_{key}'] = val
 
             val_loss = self._validate(epoch, total_epochs)
             metrics = {'train_loss': train_loss, 'val_loss': val_loss}
+            metrics.update(train_components)
 
-            # Include per-channel losses if the loss function exposes them
-            if train_mask_loss is not None:
-                metrics['train_mask_loss'] = train_mask_loss
-            if train_arrival_loss is not None:
-                metrics['train_arrival_loss'] = train_arrival_loss
-            if hasattr(self.loss_fn, 'last_mask_loss'):
-                metrics['val_mask_loss'] = self.loss_fn.last_mask_loss
-            if hasattr(self.loss_fn, 'last_arrival_loss'):
-                metrics['val_arrival_loss'] = self.loss_fn.last_arrival_loss
+            # Capture per-component losses from validation (last batch)
+            for attr in ['last_bce', 'last_dice', 'last_focal', 'last_mask_loss', 'last_arrival_loss']:
+                val = getattr(self.loss_fn, attr, None)
+                if val is not None:
+                    key = attr.replace('last_', '')
+                    metrics[f'val_{key}'] = val
 
             for cb in self.callbacks:
                 cb.on_validation_end(epoch=epoch, metrics=metrics, model=self.model, optimizer=self.optimizer)

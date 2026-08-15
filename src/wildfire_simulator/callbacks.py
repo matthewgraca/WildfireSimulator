@@ -39,12 +39,11 @@ class TensorBoardCallback:
         self.train_writer.add_scalar("Loss", metrics['train_loss'], epoch)
         self.val_writer.add_scalar("Loss", metrics['val_loss'], epoch)
 
-        # Log per-channel losses if available (from HybridLoss)
-        if 'train_mask_loss' in metrics:
-            self.train_writer.add_scalar("Loss/mask_bce", metrics['train_mask_loss'], epoch)
-        if 'train_arrival_loss' in metrics:
-            self.train_writer.add_scalar("Loss/arrival_mse", metrics['train_arrival_loss'], epoch)
-        if 'val_mask_loss' in metrics:
-            self.val_writer.add_scalar("Loss/mask_bce", metrics['val_mask_loss'], epoch)
-        if 'val_arrival_loss' in metrics:
-            self.val_writer.add_scalar("Loss/arrival_mse", metrics['val_arrival_loss'], epoch)
+        # Log per-component losses if available
+        for key in ['bce', 'dice', 'focal', 'mask_loss', 'arrival_loss']:
+            train_key = f'train_{key}'
+            val_key = f'val_{key}'
+            if train_key in metrics:
+                self.train_writer.add_scalar(f"Loss/{key}", metrics[train_key], epoch)
+            if val_key in metrics:
+                self.val_writer.add_scalar(f"Loss/{key}", metrics[val_key], epoch)

@@ -255,12 +255,55 @@ def plot_training_curves(logdir, output_dir):
     val_steps = [s.step for s in val_scalars]
     val_values = [s.value for s in val_scalars]
 
-    # Detect per-channel losses
+    # Detect per-component losses
     available_tags = train_acc.Tags().get('scalars', [])
-    has_component_losses = 'Loss/mask_bce' in available_tags or 'Loss/arrival_mse' in available_tags
+    val_tags = val_acc.Tags().get('scalars', [])
 
-    if has_component_losses:
-        # Plot combined + per-channel on separate subplots
+    # FireSenseNetLoss components
+    fire_components = ['Loss/bce', 'Loss/dice', 'Loss/focal']
+    has_fire_components = any(tag in available_tags for tag in fire_components)
+
+    # Legacy HybridLoss components
+    legacy_components = ['Loss/mask_bce', 'Loss/arrival_mse']
+    has_legacy_components = any(tag in available_tags for tag in legacy_components)
+
+    if has_fire_components:
+        # Plot combined + 3 FireSenseNet components
+        fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+
+        # Combined loss
+        axes[0].plot(train_steps, train_values, label='Train', linewidth=1.5)
+        axes[0].plot(val_steps, val_values, label='Val', linewidth=1.5)
+        axes[0].set_xlabel('Epoch')
+        axes[0].set_ylabel('Loss')
+        axes[0].set_title('Combined Loss')
+        axes[0].legend()
+        axes[0].grid(True, alpha=0.3)
+
+        component_info = [
+            ('Loss/bce', 'Weighted BCE', 'Loss'),
+            ('Loss/dice', 'Dice Loss', 'Loss'),
+            ('Loss/focal', 'Focal Loss', 'Loss'),
+        ]
+        for idx, (tag, title, ylabel) in enumerate(component_info):
+            ax = axes[idx + 1]
+            if tag in available_tags:
+                train_data = train_acc.Scalars(tag)
+                ax.plot([s.step for s in train_data], [s.value for s in train_data], label='Train', linewidth=1.5)
+            if tag in val_tags:
+                val_data = val_acc.Scalars(tag)
+                ax.plot([s.step for s in val_data], [s.value for s in val_data], label='Val', linewidth=1.5)
+            ax.set_xlabel('Epoch')
+            ax.set_ylabel(ylabel)
+            ax.set_title(title)
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+
+        fig.suptitle('Training & Validation Loss', fontsize=13)
+        fig.tight_layout()
+
+    elif has_legacy_components:
+        # Plot combined + legacy per-channel on separate subplots
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
         # Combined loss
@@ -275,7 +318,7 @@ def plot_training_curves(logdir, output_dir):
         # Mask BCE
         if 'Loss/mask_bce' in available_tags:
             train_mask = train_acc.Scalars("Loss/mask_bce")
-            val_mask = val_acc.Scalars("Loss/mask_bce") if 'Loss/mask_bce' in val_acc.Tags().get('scalars', []) else []
+            val_mask = val_acc.Scalars("Loss/mask_bce") if 'Loss/mask_bce' in val_tags else []
             axes[1].plot([s.step for s in train_mask], [s.value for s in train_mask], label='Train', linewidth=1.5)
             if val_mask:
                 axes[1].plot([s.step for s in val_mask], [s.value for s in val_mask], label='Val', linewidth=1.5)
@@ -288,7 +331,7 @@ def plot_training_curves(logdir, output_dir):
         # Arrival MSE
         if 'Loss/arrival_mse' in available_tags:
             train_arr = train_acc.Scalars("Loss/arrival_mse")
-            val_arr = val_acc.Scalars("Loss/arrival_mse") if 'Loss/arrival_mse' in val_acc.Tags().get('scalars', []) else []
+            val_arr = val_acc.Scalars("Loss/arrival_mse") if 'Loss/arrival_mse' in val_tags else []
             axes[2].plot([s.step for s in train_arr], [s.value for s in train_arr], label='Train', linewidth=1.5)
             if val_arr:
                 axes[2].plot([s.step for s in val_arr], [s.value for s in val_arr], label='Val', linewidth=1.5)

@@ -18,6 +18,7 @@ from wildfire_simulator.dataloader import TrialCollection, TrialFileLoader, Wild
 from wildfire_simulator.datasets import WildfireDataset, TransformedDataset
 from wildfire_simulator.transforms import MinMaxPerChannel
 from wildfire_simulator.scheduled_sampler import ScheduledSampler
+from wildfire_simulator.losses import FireSenseNetLoss
 from wildfire_simulator.utils import ScalarRNG
 from wildfire_simulator.config import load_config
 
@@ -126,7 +127,7 @@ def main():
     trainer = ForwardBurnTrainer(
         model=model,
         optimizer=optimizer,
-        loss_fn=nn.BCELoss(),
+        loss_fn=FireSenseNetLoss(),
         train_loader=train_loader,
         val_loader=val_loader,
         train_batch_processor=train_batch_processor,
