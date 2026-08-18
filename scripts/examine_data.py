@@ -161,22 +161,19 @@ def plot_static_channels(sample, output_path):
 
     # Wind quiver plot (panel at row 1, col 3)
     ax_wind = axes[1, 3]
-    wind_speed = sample[10, 0, 0].item()  # scalar (constant across spatial)
-    wind_dir = sample[11, 0, 0].item()    # degrees, meteorological convention
-
-    # Meteorological wind direction: direction wind comes FROM, measured clockwise from north
-    # Convert to math angle (direction wind blows TO, counterclockwise from east)
-    wind_dir_rad = np.radians(270 - wind_dir)
-    u = wind_speed * np.cos(wind_dir_rad)
-    v = wind_speed * np.sin(wind_dir_rad)
+    wind_u = sample[10, 0, 0].item()  # U component (east-west)
+    wind_v = sample[11, 0, 0].item()  # V component (north-south)
+    wind_speed = np.sqrt(wind_u**2 + wind_v**2)
+    wind_dir = (np.degrees(np.arctan2(-wind_u, -wind_v)) + 360) % 360
 
     # Create a grid of arrows showing uniform wind field
     grid_size = 10
     x = np.linspace(0, 500, grid_size)
     y = np.linspace(0, 500, grid_size)
     X, Y = np.meshgrid(x, y)
-    U = np.full_like(X, u)
-    V = np.full_like(Y, v)
+    # U/V are in cartesian (U=east, V=north); flip V for image coords
+    U = np.full_like(X, wind_u)
+    V = np.full_like(Y, -wind_v)
 
     ax_wind.quiver(X, Y, U, V, scale=wind_speed * 15, color='navy', alpha=0.7)
     ax_wind.set_xlim(0, 500)

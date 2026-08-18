@@ -152,6 +152,82 @@ def compute_metrics(pred_frames, gt_frames):
     return {k: float(np.mean(v)) for k, v in metrics.items()}
 
 
+def save_input_channels(sample, sample_idx, output_dir):
+    """Save visualization of static input channels (landscape features) for a sample."""
+    # Channel mapping (skip 0=mask, 1=FAT):
+    # 2: Elevation, 3: Slope, 4: Aspect, 5: Fuel model (FBFM40)
+    # 6: Canopy cover, 7: Stand height, 8: Canopy base height, 9: Canopy bulk density
+    # 10: Wind speed (scalar), 11: Wind direction (scalar), 12: Foliar moisture (scalar)
+
+    channel_info = [
+        (2, "Elevation", "terrain", "m"),
+        (3, "Slope", "YlOrBr", "°"),
+        (4, "Aspect", "hsv", "°"),
+        (5, "Fuel Model\n(FBFM40)", "Set3", ""),
+        (6, "Canopy Cover", "Greens", "%"),
+        (7, "Stand Height", "Greens", "m"),
+        (8, "Canopy Base\nHeight", "Greens", "m"),
+        (9, "Canopy Bulk\nDensity", "Greens", "kg/m³"),
+    ]
+
+    sample_np = sample.numpy() if isinstance(sample, torch.Tensor) else sample
+
+    fig, axes = plt.subplots(2, 5, figsize=(20, 8))
+
+    # Plot spatial channels (2-9)
+    for i, (ch_idx, name, cmap, unit) in enumerate(channel_info):
+        row, col = divmod(i, 5)
+        ax = axes[row, col]
+        data = sample_np[ch_idx]
+
+        im = ax.imshow(data, cmap=cmap, aspect='equal')
+        ax.set_title(name, fontsize=10)
+        ax.axis('off')
+        cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        if unit:
+            cbar.set_label(unit, fontsize=8)
+
+    # Wind quiver plot
+    ax_wind = axes[1, 3]
+    wind_u = float(sample_np[10, 0, 0])
+    wind_v = float(sample_np[11, 0, 0])
+    wind_speed = np.sqrt(wind_u**2 + wind_v**2)
+    wind_dir = (np.degrees(np.arctan2(-wind_u, -wind_v)) + 360) % 360
+
+    grid_size = 10
+    x = np.linspace(0, 500, grid_size)
+    y = np.linspace(0, 500, grid_size)
+    X, Y = np.meshgrid(x, y)
+    # U/V are already in cartesian (U=east, V=north)
+    # For image coordinates, flip V since y-axis is inverted
+    U = np.full_like(X, wind_u)
+    V = np.full_like(Y, -wind_v)
+
+    ax_wind.quiver(X, Y, U, V, scale=wind_speed * 15, color='navy', alpha=0.7)
+    ax_wind.set_xlim(0, 500)
+    ax_wind.set_ylim(500, 0)
+    ax_wind.set_aspect('equal')
+    ax_wind.set_title(f"Wind\n{wind_speed:.0f} units @ {wind_dir:.0f}°", fontsize=10)
+    ax_wind.axis('off')
+
+    # Foliar moisture
+    ax_fm = axes[1, 4]
+    foliar_moisture = float(sample_np[12, 0, 0])
+    ax_fm.text(0.5, 0.5, f"Foliar\nMoisture\n\n{foliar_moisture:.0f}%",
+               ha='center', va='center', fontsize=14,
+               transform=ax_fm.transAxes)
+    ax_fm.axis('off')
+
+    fig.suptitle(f"Sample {sample_idx} — Static Input Channels", fontsize=13)
+    fig.tight_layout()
+
+    filepath = os.path.join(output_dir, f"input_channels_sample_{sample_idx:03d}.png")
+    Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(filepath, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    return filepath
+
+
 def save_arrival_comparison(pred_history, gt_history, sample_idx, output_dir):
     """Save side-by-side arrival time comparison at multiple time steps."""
     n_steps = len(pred_history)
@@ -511,6 +587,7 @@ def main():
         # Save visuals
         save_arrival_comparison(pred_history, gt_history, i, args.output_dir)
         save_final_arrival_map(pred_history, gt_history, i, args.output_dir)
+        save_input_channels(sample, i, args.output_dir)
 
     # ─── Per-Sample Table ─────────────────────────────────────────────────
     print("\n" + "=" * 60)

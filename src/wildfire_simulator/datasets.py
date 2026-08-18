@@ -52,12 +52,21 @@ class WildfireDataset(Dataset):
         )
 
         # scalar channels broadcast to 500×500
-        ws = np.full((500, 500), trial["windspeed"], dtype=np.float32)
-        wd = np.full((500, 500), trial["winddir"], dtype=np.float32)
+        # Convert wind speed + direction (degrees) to U/V cartesian components
+        # Meteorological convention: direction is where wind comes FROM, clockwise from north
+        # U = east-west component (positive = wind blowing east)
+        # V = north-south component (positive = wind blowing north)
+        wind_speed = trial["windspeed"]
+        wind_dir_rad = np.radians(trial["winddir"])
+        wind_u = -wind_speed * np.sin(wind_dir_rad)  # east-west
+        wind_v = -wind_speed * np.cos(wind_dir_rad)  # north-south
+
+        wu = np.full((500, 500), wind_u, dtype=np.float32)
+        wv = np.full((500, 500), wind_v, dtype=np.float32)
         fm = np.full((500, 500), trial["foliar_moisture"], dtype=np.float32)
         # stack all 13 channels
         stacked = np.stack(
-            [fire_mask, fire_arr, *crops, ws, wd, fm], axis=0
+            [fire_mask, fire_arr, *crops, wu, wv, fm], axis=0
         )
 
         return stacked
