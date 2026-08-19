@@ -512,12 +512,14 @@ def save_metrics_csv(all_metrics, filepath):
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate trained wildfire model")
-    parser.add_argument('--checkpoint', type=str, required=True,
-                        help='Path to model checkpoint (.pt file)')
-    parser.add_argument('--output_dir', type=str, default='./evaluation_results',
-                        help='Directory to save evaluation outputs')
-    parser.add_argument('--logdir', type=str, default='./training',
-                        help='TensorBoard log directory')
+    parser.add_argument('experiment_dir', type=str, nargs='?', default=None,
+                        help='Experiment directory (auto-detects checkpoint, logs, and outputs here)')
+    parser.add_argument('--checkpoint', type=str, default=None,
+                        help='Path to model checkpoint (default: best checkpoint in experiment_dir/checkpoints/)')
+    parser.add_argument('--output_dir', type=str, default=None,
+                        help='Directory to save evaluation outputs (default: experiment_dir)')
+    parser.add_argument('--logdir', type=str, default=None,
+                        help='TensorBoard log directory (default: experiment_dir/training/)')
     parser.add_argument('--num_samples', type=int, default=10,
                         help='Number of test samples to evaluate')
     parser.add_argument('--config', type=str, default=None,
@@ -528,6 +530,32 @@ def main():
                         help='Maximum time for rollout (default: from config)')
     args = parser.parse_args()
 
+    # Resolve paths from experiment_dir if provided
+    exp_dir = args.experiment_dir
+
+    if args.checkpoint is None:
+        if exp_dir is None:
+            parser.error("Either experiment_dir or --checkpoint is required")
+        # Find best checkpoint (lowest val_loss in filename)
+        ckpt_dir = os.path.join(exp_dir, 'checkpoints')
+        if not os.path.isdir(ckpt_dir):
+            parser.error(f"No checkpoints directory found at {ckpt_dir}")
+        ckpt_files = sorted(Path(ckpt_dir).glob("best-model-*.pt"))
+        if not ckpt_files:
+            parser.error(f"No checkpoint files found in {ckpt_dir}")
+        # Pick the one with the lowest val_loss (last in sorted order by epoch, or parse the loss)
+        def parse_val_loss(p):
+            try:
+                return float(p.stem.split('-')[-1])
+            except ValueError:
+                return float('inf')
+        checkpoint = str(min(ckpt_files, key=parse_val_loss))
+    else:
+        checkpoint = args.checkpoint
+
+    output_dir = args.output_dir if args.output_dir is not None else (exp_dir if exp_dir else './evaluation_results')
+    logdir = args.logdir if args.logdir is not None else (os.path.join(exp_dir, 'training') if exp_dir else './training')
+
     config = load_config(args.config)
     # CLI args override config if provided
     dt = args.dt if args.dt is not None else config['dt']
@@ -536,11 +564,11 @@ def main():
     # Setup
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
-    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     # ─── Load Model ───────────────────────────────────────────────────────
-    print(f"Checkpoint: {args.checkpoint}")
-    model, ckpt_epoch = load_model(args.checkpoint, device)
+    print(f"Checkpoint: {checkpoint}")
+    model, ckpt_epoch = load_model(checkpoint, device)
     print(f"Loaded epoch: {ckpt_epoch}")
 
     # ─── Load Data ────────────────────────────────────────────────────────
@@ -554,7 +582,7 @@ def main():
     print(" TRAINING CURVES")
     print("=" * 60)
 
-    curves_path, train_data, val_data = plot_training_curves(args.logdir, args.output_dir)
+    curves_path, train_data, val_data = plot_training_curves(logdir, output_dir)
     if curves_path and train_data and val_data:
         print(build_training_table(train_data, val_data))
         print(f"\n  Saved: {curves_path}")
@@ -585,9 +613,9 @@ def main():
               f"MAE_arr={metrics['mae_arrival']:.4f}")
 
         # Save visuals
-        save_arrival_comparison(pred_history, gt_history, i, args.output_dir)
-        save_final_arrival_map(pred_history, gt_history, i, args.output_dir)
-        save_input_channels(sample, i, args.output_dir)
+        save_arrival_comparison(pred_history, gt_history, i, output_dir)
+        save_final_arrival_map(pred_history, gt_history, i, output_dir)
+        save_input_channels(sample, i, output_dir)
 
     # ─── Per-Sample Table ─────────────────────────────────────────────────
     print("\n" + "=" * 60)
@@ -602,12 +630,12 @@ def main():
     print(build_summary_table(all_metrics))
 
     # ─── Save to Disk ─────────────────────────────────────────────────────
-    csv_path = os.path.join(args.output_dir, "metrics.csv")
+    csv_path = os.path.join(output_dir, "metrics.csv")
     save_metrics_csv(all_metrics, csv_path)
 
-    summary_path = os.path.join(args.output_dir, "summary.txt")
+    summary_path = os.path.join(output_dir, "summary.txt")
     with open(summary_path, 'w') as f:
-        f.write(f"Checkpoint: {args.checkpoint}\n")
+        f.write(f"Checkpoint: {checkpoint}\n")
         f.write(f"Epoch: {ckpt_epoch}\n")
         f.write(f"Samples evaluated: {num_samples}\n")
         f.write(f"dt: {dt}, max_t: {max_t}\n\n")
@@ -619,7 +647,7 @@ def main():
     print(f"\n  Results saved:")
     print(f"    Metrics CSV:    {csv_path}")
     print(f"    Summary:        {summary_path}")
-    print(f"    Visuals:        {args.output_dir}/")
+    print(f"    Visuals:        {output_dir}/")
 
 
 if __name__ == "__main__":
