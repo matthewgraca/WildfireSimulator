@@ -171,9 +171,10 @@ def plot_static_channels(sample, output_path):
     x = np.linspace(0, 500, grid_size)
     y = np.linspace(0, 500, grid_size)
     X, Y = np.meshgrid(x, y)
-    # U/V are in cartesian (U=east, V=north); flip V for image coords
+    # U/V are in cartesian (U=east, V=north)
+    # set_ylim(500, 0) handles the y-axis flip for image coords
     U = np.full_like(X, wind_u)
-    V = np.full_like(Y, -wind_v)
+    V = np.full_like(Y, wind_v)
 
     ax_wind.quiver(X, Y, U, V, scale=wind_speed * 15, color='navy', alpha=0.7)
     ax_wind.set_xlim(0, 500)
