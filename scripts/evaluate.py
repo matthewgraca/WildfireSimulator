@@ -297,6 +297,7 @@ def save_final_arrival_map(pred_history, gt_history, sample_idx, output_dir):
     fig.tight_layout()
 
     filepath = os.path.join(output_dir, f"arrival_map_sample_{sample_idx:03d}.png")
+    Path(filepath).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(filepath, dpi=150, bbox_inches='tight')
     plt.close(fig)
     return filepath
@@ -595,6 +596,11 @@ def main():
     print(f" INFERENCE ({num_samples} test samples)")
     print("=" * 60)
 
+    # Create subfolders for visualizations
+    mask_dir = os.path.join(output_dir, "mask")
+    fat_dir = os.path.join(output_dir, "fat")
+    input_dir = os.path.join(output_dir, "input_channels")
+
     all_metrics = []
     for i in range(num_samples):
         sample = test_set[i]
@@ -612,10 +618,11 @@ def main():
         print(f"IoU={metrics['iou']:.4f}  Dice={metrics['dice']:.4f}  "
               f"MAE_arr={metrics['mae_arrival']:.4f}")
 
-        # Save visuals
-        save_arrival_comparison(pred_history, gt_history, i, output_dir)
-        save_final_arrival_map(pred_history, gt_history, i, output_dir)
-        save_input_channels(sample, i, output_dir)
+        # Save visuals into organized subfolders
+        save_arrival_comparison(pred_history, gt_history, i, mask_dir)
+        save_final_arrival_map(pred_history, gt_history, i, fat_dir)
+        save_input_channels(sample, i, input_dir)
+
 
     # ─── Per-Sample Table ─────────────────────────────────────────────────
     print("\n" + "=" * 60)

@@ -46,10 +46,11 @@ CHANNEL_NAMES = [
     "Wind U",             # 10
     "Wind V",             # 11
     "Foliar Moisture",    # 12
+    "Time",               # 13 (virtual — appended by step function)
 ]
 
 # Channels to ablate (all 13 including mask and FAT)
-ABLATION_CHANNELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+ABLATION_CHANNELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
 
 
 def load_model(checkpoint_path, device):
@@ -78,27 +79,58 @@ def compute_channel_means(dataset, train_indices):
     return means
 
 
-def run_inference_ablated(model, sample, transform, device, dt, max_t, ablate_channel=None, channel_mean=None):
+def fire_burn_step_no_time(t, model, inputs, dt=None):
+    """fire_burn_step with time channel ablated (set to constant 0)."""
+    return fire_burn_step(0, model, inputs, dt=dt)
+
+
+def fire_burn_step_binarize_fat(t, model, inputs, dt=None):
+    """fire_burn_step that binarizes FAT after each step (removes temporal gradient)."""
+    result = fire_burn_step(t, model, inputs, dt=dt)
+    # Binarize FAT: all burned pixels get the same value (1.0), removing temporal ordering
+    mask = result[0, 0]
+    result[0, 1] = (mask > 0).float()
+    return result
+
+
+def run_inference_ablated(model, sample, transform, device, dt, max_t,
+                          ablate_channel=None, channel_mean=None, ablate_time=False,
+                          binarize_fat=False):
     """Run inference with an optional channel ablated (replaced with its mean)."""
+    # Keep original sample for ground truth
+    sample_original = sample
+
     if ablate_channel is not None and channel_mean is not None:
         sample = sample.clone()
         sample[ablate_channel] = channel_mean
 
-    burner = ForwardBurnProcess()
-    sample_transformed = transform(sample)
+    if binarize_fat:
+        sample = sample.clone()
+        # Replace FAT (channel 1) with binarized version (same as mask channel 0)
+        # Preserves spatial signal but removes temporal gradient
+        sample[1] = (sample[0] > 0).float() * sample[1].max()
 
-    # Ground truth
+    burner = ForwardBurnProcess()
+    sample_original_transformed = transform(sample_original)
+
+    # Ground truth from ORIGINAL (unablated) sample
     times = np.arange(dt, max_t, dt)
     gt_history = []
     for t in times:
-        burned = burner(sample_transformed, t)
+        burned = burner(sample_original_transformed, t)
         gt_history.append(transform.inverse(burned))
-    gt_history.append(sample)
+    gt_history.append(sample_original)
 
-    # Run simulator
+    # Run simulator with appropriate step function
+    if ablate_time:
+        step_fn = fire_burn_step_no_time
+    elif binarize_fat:
+        step_fn = fire_burn_step_binarize_fat
+    else:
+        step_fn = fire_burn_step
     sample_batched = sample.unsqueeze(0).to(device)
     simulator = ForwardBurnSimulator(
-        data=sample_batched, model=model, step=fire_burn_step,
+        data=sample_batched, model=model, step=step_fn,
         transform=transform, dt=dt * max_t, max_t=max_t, t0=dt * max_t
     )
     pred_history = simulator.run_to(max_t, return_history=True)
@@ -141,21 +173,75 @@ def compute_metrics(pred_frames, gt_frames):
     }
 
 
+def save_ablation_visuals(pred_history, gt_history, sample_idx, output_dir):
+    """Save mask and FAT comparison for a single ablated sample."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    n_steps = len(pred_history)
+    indices = np.linspace(0, n_steps - 1, min(8, n_steps), dtype=int)
+
+    fig, axes = plt.subplots(3, len(indices), figsize=(len(indices) * 3, 9), squeeze=False)
+
+    for col, idx in enumerate(indices):
+        pred = pred_history[idx]
+        gt = gt_history[idx] if idx < len(gt_history) else gt_history[-1]
+
+        pred_mask = pred[0].numpy() if isinstance(pred, torch.Tensor) else pred[0]
+        gt_mask = gt[0].numpy() if isinstance(gt, torch.Tensor) else gt[0]
+        pred_fat = pred[1].numpy() if isinstance(pred, torch.Tensor) else pred[1]
+
+        # Row 0: Predicted mask
+        axes[0, col].imshow(np.where(pred_mask == 0, np.nan, pred_mask), cmap='YlOrRd', vmin=0, vmax=1, aspect='equal')
+        axes[0, col].set_title(f"t={idx}", fontsize=8)
+        axes[0, col].axis('off')
+
+        # Row 1: Ground truth mask
+        axes[1, col].imshow(np.where(gt_mask == 0, np.nan, gt_mask), cmap='YlOrRd', vmin=0, vmax=1, aspect='equal')
+        axes[1, col].axis('off')
+
+        # Row 2: Predicted FAT (deterministic, built from mask predictions)
+        axes[2, col].imshow(np.where(pred_fat == 0, np.nan, pred_fat), cmap='YlOrRd', aspect='equal')
+        axes[2, col].axis('off')
+
+    fig.text(0.02, 0.78, "Predicted\nMask", va='center', ha='center', fontsize=10, rotation=90)
+    fig.text(0.02, 0.50, "Ground Truth\nMask", va='center', ha='center', fontsize=10, rotation=90)
+    fig.text(0.02, 0.22, "Predicted\nFAT", va='center', ha='center', fontsize=10, rotation=90)
+
+    fig.suptitle(f"Sample {sample_idx}", fontsize=12)
+    fig.tight_layout()
+    fig.subplots_adjust(left=0.06)
+
+    filepath = os.path.join(output_dir, f"sample_{sample_idx:03d}.png")
+    fig.savefig(filepath, dpi=100, bbox_inches='tight')
+    plt.close(fig)
+
+
 def evaluate_condition(model, test_set, transform, device, dt, max_t, num_samples,
-                       ablate_channel=None, channel_mean=None, label=""):
-    """Evaluate model on test set with optional ablation."""
+                       ablate_channel=None, channel_mean=None, ablate_time=False,
+                       binarize_fat=False, label="", output_dir=None):
+    """Evaluate model on test set with optional ablation and visualization."""
     all_metrics = {'iou': [], 'f1': [], 'precision': [], 'recall': []}
+
+    if output_dir is not None:
+        os.makedirs(output_dir, exist_ok=True)
 
     for i in tqdm(range(num_samples), desc=f"  {label:<23s}", leave=True):
         sample = test_set[i]
         pred_history, gt_history = run_inference_ablated(
             model, sample, transform, device, dt, max_t,
-            ablate_channel=ablate_channel, channel_mean=channel_mean
+            ablate_channel=ablate_channel, channel_mean=channel_mean,
+            ablate_time=ablate_time, binarize_fat=binarize_fat
         )
         min_len = min(len(pred_history), len(gt_history))
         m = compute_metrics(pred_history[:min_len], gt_history[:min_len])
         for k in all_metrics:
             all_metrics[k].append(m[k])
+
+        # Save visualization if output_dir is provided
+        if output_dir is not None:
+            save_ablation_visuals(pred_history[:min_len], gt_history[:min_len], i, output_dir)
 
     avg = {k: float(np.mean(v)) for k, v in all_metrics.items()}
     print(f"  {'':25s} IoU={avg['iou']:.4f}  F1={avg['f1']:.4f}  Prec={avg['precision']:.4f}  Recall={avg['recall']:.4f}")
@@ -225,20 +311,44 @@ def main():
     print(" ABLATION STUDY")
     print("=" * 70)
 
+    ablation_dir = os.path.join(args.experiment_dir, "ablation")
+    os.makedirs(ablation_dir, exist_ok=True)
+
     baseline = evaluate_condition(
         model, test_set, transform, device, dt, max_t, num_samples,
-        label="Baseline (no ablation)"
+        label="Baseline (no ablation)",
+        output_dir=os.path.join(ablation_dir, "baseline")
     )
 
     # --- Ablation per channel ---
     results = [("Baseline", baseline)]
 
     for ch in ABLATION_CHANNELS:
-        avg = evaluate_condition(
-            model, test_set, transform, device, dt, max_t, num_samples,
-            ablate_channel=ch, channel_mean=channel_means[ch],
-            label=CHANNEL_NAMES[ch]
-        )
+        folder_name = CHANNEL_NAMES[ch].lower().replace(" ", "_").replace("(", "").replace(")", "").replace("/", "_")
+        ch_output_dir = os.path.join(ablation_dir, folder_name)
+
+        if ch == 13:
+            avg = evaluate_condition(
+                model, test_set, transform, device, dt, max_t, num_samples,
+                ablate_time=True,
+                label=CHANNEL_NAMES[ch],
+                output_dir=ch_output_dir
+            )
+        elif ch == 1:
+            # FAT ablation: binarize to remove temporal gradient, keep spatial signal
+            avg = evaluate_condition(
+                model, test_set, transform, device, dt, max_t, num_samples,
+                binarize_fat=True,
+                label=CHANNEL_NAMES[ch] + " (binary)",
+                output_dir=ch_output_dir
+            )
+        else:
+            avg = evaluate_condition(
+                model, test_set, transform, device, dt, max_t, num_samples,
+                ablate_channel=ch, channel_mean=channel_means[ch],
+                label=CHANNEL_NAMES[ch],
+                output_dir=ch_output_dir
+            )
         results.append((CHANNEL_NAMES[ch], avg))
 
     # --- Save CSV ---
@@ -263,8 +373,8 @@ def main():
     names = [r[0] for r in ablated_sorted]
     residuals = [r[1]['iou'] - baseline['iou'] for r in ablated_sorted]
 
-    # Color: red for negative (important), green for positive (hurts performance when present)
-    colors = ['#D32F2F' if r < 0 else '#388E3C' for r in residuals]
+    # Color: green for negative (important), red for positive (hurts performance when present)
+    colors = ['#D32F2F' if r >= 0 else '#388E3C' for r in residuals]
 
     fig, ax = plt.subplots(figsize=(10, 7))
     bars = ax.barh(range(len(names)), residuals, color=colors)
