@@ -50,6 +50,12 @@ class BurnerBatchProcessor:
         burned_t[:, 0:1][not_burnt_t] = 0.0
         burned_t[:, 1:2][not_burnt_t] = 0.0
 
+        # Quantize FAT to discrete time steps (ceil to next dt boundary)
+        # This matches inference where FAT is assigned t+dt at each step
+        fat = burned_t[:, 1:2]
+        fat_nonzero = fat > 0
+        burned_t[:, 1:2][fat_nonzero] = torch.ceil(fat[fat_nonzero] / self.dt) * self.dt
+
         # --- Vectorized burn at time t+dt (targets) ---
         not_burnt_dt = true[:, 1:2, :, :] > (t + self.dt)  # (N, 1, H, W)
         burned_dt = true.clone()
