@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import copy
 import csv
 import os
 import sys
@@ -18,6 +19,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import random_split
 from tqdm import tqdm
 
@@ -85,12 +87,23 @@ def fire_burn_step_no_time(t, model, inputs, dt=None):
 
 
 def fire_burn_step_binarize_fat(t, model, inputs, dt=None):
-    """fire_burn_step that binarizes FAT after each step (removes temporal gradient)."""
-    result = fire_burn_step(t, model, inputs, dt=dt)
-    # Binarize FAT: all burned pixels get the same value (1.0), removing temporal ordering
-    mask = result[0, 0]
-    result[0, 1] = (mask > 0).float()
-    return result
+    """fire_burn_step that binarizes FAT before and after model (removes temporal gradient)."""
+    inputs = copy.deepcopy(inputs)
+    # Binarize FAT before model sees it: burned = 1, unburned = 0
+    mask = inputs[0, 0]
+    inputs[0, 1] = (mask > 0).float()
+    # Now run normal step (model sees binarized FAT)
+    inputs = torch.cat((inputs, torch.full((1, 1, 500, 500), t, device=inputs.device)), dim=1)
+    inputs = F.pad(inputs, (6, 6, 6, 6, 0, 0), mode='constant', value=0)
+    with torch.no_grad():
+        pred = model(inputs)
+        if isinstance(pred, (list, tuple)):
+            pred = pred[0]
+        pred_mask = (pred[0, 0].detach() > 0.5).float()
+        inputs[0, 0, 6:-6, 6:-6] = pred_mask[6:-6, 6:-6]
+        # FAT update: just binarize (no temporal values)
+        inputs[0, 1, 6:-6, 6:-6] = (pred_mask[6:-6, 6:-6] > 0).float()
+    return inputs[:, :13, 6:-6, 6:-6]
 
 
 def run_inference_ablated(model, sample, transform, device, dt, max_t,
@@ -105,10 +118,10 @@ def run_inference_ablated(model, sample, transform, device, dt, max_t,
         sample[ablate_channel] = channel_mean
 
     if binarize_fat:
-        sample = sample.clone()
-        # Replace FAT (channel 1) with binarized version (same as mask channel 0)
-        # Preserves spatial signal but removes temporal gradient
-        sample[1] = (sample[0] > 0).float() * sample[1].max()
+        # Don't modify the initial sample — let burn initialization work
+        # normally with real FAT values. The step function will binarize FAT
+        # at each autoregressive step so the model never sees temporal gradient.
+        pass
 
     burner = ForwardBurnProcess()
     sample_original_transformed = transform(sample_original)
