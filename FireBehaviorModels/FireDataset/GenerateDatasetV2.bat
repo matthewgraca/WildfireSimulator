@@ -31,33 +31,10 @@ goto loop
 :WriteInput
 REM %1 = wind speed, %2 = wind direction, %3 = moisture
 set "INPUTFILE=mtt.input"
->"%INPUTFILE%" echo FlamMap-Inputs-File-Version-1
+>"%INPUTFILE%" echo ShortTerm-Inputs-File-Version-1
 >>"%INPUTFILE%" echo.
->>"%INPUTFILE%" echo FUEL_MOISTURES_DATA: 24
->>"%INPUTFILE%" echo 0 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 101 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 102 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 103 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 121 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 122 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 123 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 141 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 142 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 144 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 145 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 147 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 161 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 162 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 163 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 165 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 181 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 182 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 183 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 184 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 185 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 186 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 188 6 7 8 60 90 %3
->>"%INPUTFILE%" echo 189 6 7 8 60 90 %3
+>>"%INPUTFILE%" echo FUEL_MOISTURES_DATA: 1
+>>"%INPUTFILE%" echo 0 6 7 8 60 90 16
 >>"%INPUTFILE%" echo.
 >>"%INPUTFILE%" echo WIND_SPEED: %1
 >>"%INPUTFILE%" echo WIND_DIRECTION: %2
@@ -68,12 +45,6 @@ set "INPUTFILE=mtt.input"
 >>"%INPUTFILE%" echo FOLIAR_MOISTURE_CONTENT: %3
 >>"%INPUTFILE%" echo CROWN_FIRE_METHOD: Finney
 >>"%INPUTFILE%" echo NUMBER_PROCESSORS: 4
->>"%INPUTFILE%" echo.
->>"%INPUTFILE%" echo #SELECTED FLAMMAP OUTPUTS
->>"%INPUTFILE%" echo SPREADRATE:
->>"%INPUTFILE%" echo WINDDIRGRID:
->>"%INPUTFILE%" echo WINDSPEEDGRID:
->>"%INPUTFILE%" echo #END SELECTED FLAMMAP OUTPUTS
 >>"%INPUTFILE%" echo.
 >>"%INPUTFILE%" echo MTT_RESOLUTION: 30
 >>"%INPUTFILE%" echo MTT_SIM_TIME: 1440
