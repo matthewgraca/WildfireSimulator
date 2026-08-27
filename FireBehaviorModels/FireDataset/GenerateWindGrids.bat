@@ -12,13 +12,14 @@ REM Output: .\WindGrids\vel_{speed}_{dir}.asc and .\WindGrids\ang_{speed}_{dir}.
 
 setlocal enabledelayedexpansion
 
-REM Create output directories
-if not exist "%~dp0WindGrids" md "%~dp0WindGrids"
-if not exist "%~dp0WindGridsTemp" md "%~dp0WindGridsTemp"
+REM Use the script's own directory as base
+set "BASEDIR=%~dp0"
+set "TEMPDIR=%BASEDIR%WindGridsTemp"
+set "OUTDIR=%BASEDIR%WindGrids"
 
-REM Set absolute paths to avoid issues in for loops
-set "TEMPDIR=%~dp0WindGridsTemp"
-set "OUTDIR=%~dp0WindGrids"
+REM Create output directories
+if not exist "%TEMPDIR%" md "%TEMPDIR%"
+if not exist "%OUTDIR%" md "%OUTDIR%"
 
 REM Verify gdal_translate is available
 where gdal_translate >nul 2>&1
@@ -42,50 +43,56 @@ for /L %%D in (0, 10, 350) do (
         set /a COUNT+=1
         echo [!COUNT!/%TOTAL%] Generating wind grid: speed=%%S mph, direction=%%D deg
 
-        REM Write FlamMap input file for this wind combo
-        (
-            echo FlamMap-Inputs-File-Version-1
-            echo.
-            echo FUEL_MOISTURES_DATA: 1
-            echo 0 6 7 8 60 90 16
-            echo.
-            echo WIND_SPEED: %%S
-            echo WIND_DIRECTION: %%D
-            echo WIND_SPEED_UNITS: 0
-            echo GRIDDED_WINDS_GENERATE: Yes
-            echo GRIDDED_WINDS_RESOLUTION: 30
-            echo GRIDDED_WINDS_DIURNAL: No
-            echo FOLIAR_MOISTURE_CONTENT: 100
-            echo CROWN_FIRE_METHOD: Finney
-            echo NUMBER_PROCESSORS: 4
-            echo.
-            echo #SELECTED FLAMMAP OUTPUTS
-            echo WINDDIRGRID:
-            echo WINDSPEEDGRID:
-            echo #END SELECTED FLAMMAP OUTPUTS
-        ) > "!TEMPDIR!\flammap_wind.input"
+        call :WriteInput %%S %%D
 
         REM Write command file
-        echo palisades.tif "!TEMPDIR!\flammap_wind.input" "!TEMPDIR!\wind" 2 > "!TEMPDIR!\Cmd.txt"
+        echo palisades.tif %TEMPDIR%\flammap_wind.input %TEMPDIR%\wind 2> "%TEMPDIR%\Cmd.txt"
 
         REM Run FlamMap to generate gridded winds
-        ..\bin\runflammap "!TEMPDIR!\Cmd.txt"
+        ..\bin\runflammap "%TEMPDIR%\Cmd.txt"
 
         REM Convert GeoTIFF outputs to ASCII grids
-        gdal_translate -of AAIGrid "!TEMPDIR!\wind_WindSpeedGrid.tif" "!OUTDIR!\vel_%%S_%%D.asc"
-        gdal_translate -of AAIGrid "!TEMPDIR!\wind_WindDirGrid.tif" "!OUTDIR!\ang_%%S_%%D.asc"
+        gdal_translate -of AAIGrid "%TEMPDIR%\wind_WindSpeedGrid.tif" "%OUTDIR%\vel_%%S_%%D.asc"
+        gdal_translate -of AAIGrid "%TEMPDIR%\wind_WindDirGrid.tif" "%OUTDIR%\ang_%%S_%%D.asc"
 
         REM Clean up temp outputs
-        del /Q "!TEMPDIR!\wind_*.tif" 2>nul
-        del /Q "!TEMPDIR!\wind_*.tif.aux.xml" 2>nul
+        del /Q "%TEMPDIR%\wind_*.tif" 2>nul
+        del /Q "%TEMPDIR%\wind_*.tif.aux.xml" 2>nul
     )
 )
 
 REM Clean up temp directory
-rd /S /Q "!TEMPDIR!"
+rd /S /Q "%TEMPDIR%"
 
 echo.
 echo ============================================
 echo  Done! Generated %TOTAL% wind grid pairs in .\WindGrids\
 echo  You can now run GenerateDatasetV2.bat
 echo ============================================
+
+exit /b 0
+
+:WriteInput
+REM Subroutine to write the FlamMap input file
+REM %1 = wind speed, %2 = wind direction
+set "INPUTFILE=%TEMPDIR%\flammap_wind.input"
+echo FlamMap-Inputs-File-Version-1> "%INPUTFILE%"
+echo.>> "%INPUTFILE%"
+echo FUEL_MOISTURES_DATA: 1>> "%INPUTFILE%"
+echo 0 6 7 8 60 90 16>> "%INPUTFILE%"
+echo.>> "%INPUTFILE%"
+echo WIND_SPEED: %1>> "%INPUTFILE%"
+echo WIND_DIRECTION: %2>> "%INPUTFILE%"
+echo WIND_SPEED_UNITS: 0>> "%INPUTFILE%"
+echo GRIDDED_WINDS_GENERATE: Yes>> "%INPUTFILE%"
+echo GRIDDED_WINDS_RESOLUTION: 30>> "%INPUTFILE%"
+echo GRIDDED_WINDS_DIURNAL: No>> "%INPUTFILE%"
+echo FOLIAR_MOISTURE_CONTENT: 100>> "%INPUTFILE%"
+echo CROWN_FIRE_METHOD: Finney>> "%INPUTFILE%"
+echo NUMBER_PROCESSORS: 4>> "%INPUTFILE%"
+echo.>> "%INPUTFILE%"
+echo #SELECTED FLAMMAP OUTPUTS>> "%INPUTFILE%"
+echo WINDDIRGRID:>> "%INPUTFILE%"
+echo WINDSPEEDGRID:>> "%INPUTFILE%"
+echo #END SELECTED FLAMMAP OUTPUTS>> "%INPUTFILE%"
+exit /b 0
