@@ -21,12 +21,11 @@ REM Create output directories
 if not exist "%TEMPDIR%" md "%TEMPDIR%"
 if not exist "%OUTDIR%" md "%OUTDIR%"
 
-REM Verify gdal_translate is available
-where gdal_translate >nul 2>&1
-if errorlevel 1 (
-    echo ERROR: gdal_translate not found on PATH.
-    echo Install GDAL or OSGeo4W and add to PATH.
-    exit /b 1
+REM Quick check for gdal_translate
+gdal_translate --version >nul 2>nul
+if not %errorlevel%==0 (
+    echo WARNING: gdal_translate may not be available on PATH.
+    echo If conversion fails, install GDAL or OSGeo4W and add to PATH.
 )
 
 echo ============================================
@@ -46,7 +45,7 @@ for /L %%D in (0, 10, 350) do (
         call :WriteInput %%S %%D
 
         REM Write command file
-        echo palisades.tif %TEMPDIR%\flammap_wind.input %TEMPDIR%\wind 2> "%TEMPDIR%\Cmd.txt"
+        >"%TEMPDIR%\Cmd.txt" echo palisades.tif %TEMPDIR%\flammap_wind.input %TEMPDIR%\wind 2
 
         REM Run FlamMap to generate gridded winds
         ..\bin\runflammap "%TEMPDIR%\Cmd.txt"
@@ -76,23 +75,23 @@ exit /b 0
 REM Subroutine to write the FlamMap input file
 REM %1 = wind speed, %2 = wind direction
 set "INPUTFILE=%TEMPDIR%\flammap_wind.input"
-echo FlamMap-Inputs-File-Version-1> "%INPUTFILE%"
-echo.>> "%INPUTFILE%"
-echo FUEL_MOISTURES_DATA: 1>> "%INPUTFILE%"
-echo 0 6 7 8 60 90 16>> "%INPUTFILE%"
-echo.>> "%INPUTFILE%"
-echo WIND_SPEED: %1>> "%INPUTFILE%"
-echo WIND_DIRECTION: %2>> "%INPUTFILE%"
-echo WIND_SPEED_UNITS: 0>> "%INPUTFILE%"
-echo GRIDDED_WINDS_GENERATE: Yes>> "%INPUTFILE%"
-echo GRIDDED_WINDS_RESOLUTION: 30>> "%INPUTFILE%"
-echo GRIDDED_WINDS_DIURNAL: No>> "%INPUTFILE%"
-echo FOLIAR_MOISTURE_CONTENT: 100>> "%INPUTFILE%"
-echo CROWN_FIRE_METHOD: Finney>> "%INPUTFILE%"
-echo NUMBER_PROCESSORS: 4>> "%INPUTFILE%"
-echo.>> "%INPUTFILE%"
-echo #SELECTED FLAMMAP OUTPUTS>> "%INPUTFILE%"
-echo WINDDIRGRID:>> "%INPUTFILE%"
-echo WINDSPEEDGRID:>> "%INPUTFILE%"
-echo #END SELECTED FLAMMAP OUTPUTS>> "%INPUTFILE%"
+>"%INPUTFILE%" echo FlamMap-Inputs-File-Version-1
+>>"%INPUTFILE%" echo.
+>>"%INPUTFILE%" echo FUEL_MOISTURES_DATA: 1
+>>"%INPUTFILE%" echo 0 6 7 8 60 90 16
+>>"%INPUTFILE%" echo.
+>>"%INPUTFILE%" echo WIND_SPEED: %1
+>>"%INPUTFILE%" echo WIND_DIRECTION: %2
+>>"%INPUTFILE%" echo WIND_SPEED_UNITS: 0
+>>"%INPUTFILE%" echo GRIDDED_WINDS_GENERATE: Yes
+>>"%INPUTFILE%" echo GRIDDED_WINDS_RESOLUTION: 30
+>>"%INPUTFILE%" echo GRIDDED_WINDS_DIURNAL: No
+>>"%INPUTFILE%" echo FOLIAR_MOISTURE_CONTENT: 100
+>>"%INPUTFILE%" echo CROWN_FIRE_METHOD: Finney
+>>"%INPUTFILE%" echo NUMBER_PROCESSORS: 4
+>>"%INPUTFILE%" echo.
+>>"%INPUTFILE%" echo #SELECTED FLAMMAP OUTPUTS
+>>"%INPUTFILE%" echo WINDDIRGRID:
+>>"%INPUTFILE%" echo WINDSPEEDGRID:
+>>"%INPUTFILE%" echo #END SELECTED FLAMMAP OUTPUTS
 exit /b 0
