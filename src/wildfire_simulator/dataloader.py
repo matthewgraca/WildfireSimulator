@@ -38,6 +38,22 @@ class TrialFileLoader:
         m_str = next(p for p in parts if p.startswith('M'))
         foliar_moisture = int(m_str[1:])
 
+        # Load per-cell wind grids if available (v2 dataset)
+        dir_path = os.path.dirname(file_path)
+        windspeed_grid_path = os.path.join(dir_path, base + "_windspeed.tif")
+        winddir_grid_path = os.path.join(dir_path, base + "_winddir.tif")
+
+        wind_speed_grid = None
+        wind_dir_grid = None
+        if os.path.exists(windspeed_grid_path) and os.path.exists(winddir_grid_path):
+            ws_ds = rioxarray.open_rasterio(windspeed_grid_path)
+            wind_speed_grid = ws_ds.isel(band=0).values.astype(np.float32)
+            wind_speed_grid[wind_speed_grid == -9999] = 0
+
+            wd_ds = rioxarray.open_rasterio(winddir_grid_path)
+            wind_dir_grid = wd_ds.isel(band=0).values.astype(np.float32)
+            wind_dir_grid[wind_dir_grid == -9999] = 0
+
         return {
             "filename": os.path.basename(file_path),
             "fire": stacked,
@@ -45,6 +61,8 @@ class TrialFileLoader:
             "windspeed": windspeed,
             "winddir": winddir,
             "foliar_moisture": foliar_moisture,
+            "wind_speed_grid": wind_speed_grid,
+            "wind_dir_grid": wind_dir_grid,
         }
 
 

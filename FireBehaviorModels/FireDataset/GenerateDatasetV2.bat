@@ -1,6 +1,7 @@
 @echo off
 REM v2: includes pre-computed terrain-aware winds
 REM Uses WindNinja (via GRIDDED_WINDS_GENERATE) for terrain-respecting wind fields.
+REM Saves WINDDIRGRID and WINDSPEEDGRID TIFs alongside each trial for ML input.
 REM Run from the FireDataset directory. Run SetEnv.bat first.
 setlocal enabledelayedexpansion
 
@@ -12,11 +13,15 @@ set /a "ignition = %RANDOM% %% 50"
 
 call :WriteInput !windspeed! !winddir! !moisture!
 
-echo palisades.tif mtt.input .\Ignitions\ignition_!ignition!.shp 0 .\Outputs\mtt 2> Cmd.txt
+>Cmd.txt echo palisades.tif mtt.input .\Ignitions\ignition_!ignition!.shp 0 .\Outputs\mtt 2
 
 ..\bin\runmtt Cmd.txt
 
-move .\Outputs\mtt_MTT_ArrivalTime.tif .\Trials\trail_I!ignition!_WS!windspeed!_WD!winddir!_M!moisture!.tif
+set "TRIAL_BASE=trail_I!ignition!_WS!windspeed!_WD!winddir!_M!moisture!"
+
+move .\Outputs\mtt_MTT_ArrivalTime.tif ".\Trials\!TRIAL_BASE!.tif"
+move .\Outputs\mtt_WindSpeedGrid.tif ".\Trials\!TRIAL_BASE!_windspeed.tif"
+move .\Outputs\mtt_WindDirGrid.tif ".\Trials\!TRIAL_BASE!_winddir.tif"
 
 rd /S /Q Outputs
 md Outputs
@@ -43,6 +48,8 @@ set "INPUTFILE=mtt.input"
 >>"%INPUTFILE%" echo.
 >>"%INPUTFILE%" echo #SELECTED FLAMMAP OUTPUTS
 >>"%INPUTFILE%" echo SPREADRATE:
+>>"%INPUTFILE%" echo WINDDIRGRID:
+>>"%INPUTFILE%" echo WINDSPEEDGRID:
 >>"%INPUTFILE%" echo #END SELECTED FLAMMAP OUTPUTS
 >>"%INPUTFILE%" echo.
 >>"%INPUTFILE%" echo MTT_RESOLUTION: 30

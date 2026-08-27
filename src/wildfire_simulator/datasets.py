@@ -51,18 +51,27 @@ class WildfireDataset(Dataset):
             dtype=np.float32,
         )
 
-        # scalar channels broadcast to 500×500
-        # Convert wind speed + direction (degrees) to U/V cartesian components
+        # Wind U/V channels: use per-cell grids if available, else fall back to uniform
+        # Convert wind speed + direction to U/V cartesian components
         # Meteorological convention: direction is where wind comes FROM, clockwise from north
         # U = east-west component (positive = wind blowing east)
         # V = north-south component (positive = wind blowing north)
-        wind_speed = trial["windspeed"]
-        wind_dir_rad = np.radians(trial["winddir"])
-        wind_u = -wind_speed * np.sin(wind_dir_rad)  # east-west
-        wind_v = -wind_speed * np.cos(wind_dir_rad)  # north-south
+        if trial["wind_speed_grid"] is not None and trial["wind_dir_grid"] is not None:
+            # Per-cell terrain-aware wind from WindNinja grids
+            speed_grid = trial["wind_speed_grid"][cy-half:cy+half, cx-half:cx+half]
+            dir_grid = trial["wind_dir_grid"][cy-half:cy+half, cx-half:cx+half]
+            dir_rad = np.radians(dir_grid)
+            wu = (-speed_grid * np.sin(dir_rad)).astype(np.float32)
+            wv = (-speed_grid * np.cos(dir_rad)).astype(np.float32)
+        else:
+            # Fallback: uniform wind from scalar metadata (v1 data)
+            wind_speed = trial["windspeed"]
+            wind_dir_rad = np.radians(trial["winddir"])
+            wind_u = -wind_speed * np.sin(wind_dir_rad)
+            wind_v = -wind_speed * np.cos(wind_dir_rad)
+            wu = np.full((500, 500), wind_u, dtype=np.float32)
+            wv = np.full((500, 500), wind_v, dtype=np.float32)
 
-        wu = np.full((500, 500), wind_u, dtype=np.float32)
-        wv = np.full((500, 500), wind_v, dtype=np.float32)
         fm = np.full((500, 500), trial["foliar_moisture"], dtype=np.float32)
         # stack all 13 channels
         stacked = np.stack(
