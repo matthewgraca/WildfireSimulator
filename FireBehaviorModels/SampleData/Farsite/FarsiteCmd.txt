@@ -1,0 +1,1 @@
+..\BlueMountain\BlueMountain.tif .\FarsiteRunLog.txt ..\BlueMountain\centerIgnit.shp 0 .\out\test 2

@@ -1,0 +1,1 @@
+runfarsite FarsiteCmd.txt

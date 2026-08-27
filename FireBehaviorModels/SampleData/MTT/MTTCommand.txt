@@ -1,0 +1,1 @@
+..\BlueMountain\BlueMountain.tif .\MTT_RunLog.txt ..\BlueMountain\centerIgnit.shp 0 .\out\test 2

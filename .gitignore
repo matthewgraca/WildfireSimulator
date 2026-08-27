@@ -6,6 +6,10 @@ checkpoints/
 training/
 training_test/
 checkpoints_test/
+FireBehaviorModels/FireDataset/*.tif
+FireBehaviorModels/FireDataset/Outputs
+FireBehaviorModels/FireDataset/Trials
+.cocoindex_code/
 
 # Created by https://www.toptal.com/developers/gitignore/api/python
 # Edit at https://www.toptal.com/developers/gitignore?templates=python

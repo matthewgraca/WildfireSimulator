@@ -1,0 +1,1 @@
+runrandig ..\BlueMountain\BlueMountain.tif .\RandigInputs.txt .\out\test

@@ -1,0 +1,1 @@
+runfspro ..\BlueMountain\BlueMountain.tif .\FSProInputs.txt .\out\test ..\BlueMountain\centerIgnit.shp 0

@@ -1,0 +1,1 @@
+..\BlueMountain\BlueMountain.tif .\FlamMap_inputs.txt .\out\test 2
