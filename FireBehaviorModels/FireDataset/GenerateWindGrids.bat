@@ -13,8 +13,12 @@ REM Output: .\WindGrids\vel_{speed}_{dir}.asc and .\WindGrids\ang_{speed}_{dir}.
 setlocal enabledelayedexpansion
 
 REM Create output directories
-if not exist ".\WindGrids" md WindGrids
-if not exist ".\WindGridsTemp" md WindGridsTemp
+if not exist "%~dp0WindGrids" md "%~dp0WindGrids"
+if not exist "%~dp0WindGridsTemp" md "%~dp0WindGridsTemp"
+
+REM Set absolute paths to avoid issues in for loops
+set "TEMPDIR=%~dp0WindGridsTemp"
+set "OUTDIR=%~dp0WindGrids"
 
 REM Verify gdal_translate is available
 where gdal_translate >nul 2>&1
@@ -59,26 +63,26 @@ for /L %%D in (0, 10, 350) do (
             echo WINDDIRGRID:
             echo WINDSPEEDGRID:
             echo #END SELECTED FLAMMAP OUTPUTS
-        ) > .\WindGridsTemp\flammap_wind.input
+        ) > "!TEMPDIR!\flammap_wind.input"
 
         REM Write command file
-        echo palisades.tif .\WindGridsTemp\flammap_wind.input .\WindGridsTemp\wind 2 > .\WindGridsTemp\Cmd.txt
+        echo palisades.tif "!TEMPDIR!\flammap_wind.input" "!TEMPDIR!\wind" 2 > "!TEMPDIR!\Cmd.txt"
 
         REM Run FlamMap to generate gridded winds
-        ..\bin\runflammap .\WindGridsTemp\Cmd.txt
+        ..\bin\runflammap "!TEMPDIR!\Cmd.txt"
 
         REM Convert GeoTIFF outputs to ASCII grids
-        gdal_translate -of AAIGrid .\WindGridsTemp\wind_WindSpeedGrid.tif .\WindGrids\vel_%%S_%%D.asc
-        gdal_translate -of AAIGrid .\WindGridsTemp\wind_WindDirGrid.tif .\WindGrids\ang_%%S_%%D.asc
+        gdal_translate -of AAIGrid "!TEMPDIR!\wind_WindSpeedGrid.tif" "!OUTDIR!\vel_%%S_%%D.asc"
+        gdal_translate -of AAIGrid "!TEMPDIR!\wind_WindDirGrid.tif" "!OUTDIR!\ang_%%S_%%D.asc"
 
         REM Clean up temp outputs
-        del /Q .\WindGridsTemp\wind_*.tif 2>nul
-        del /Q .\WindGridsTemp\wind_*.tif.aux.xml 2>nul
+        del /Q "!TEMPDIR!\wind_*.tif" 2>nul
+        del /Q "!TEMPDIR!\wind_*.tif.aux.xml" 2>nul
     )
 )
 
 REM Clean up temp directory
-rd /S /Q WindGridsTemp
+rd /S /Q "!TEMPDIR!"
 
 echo.
 echo ============================================
