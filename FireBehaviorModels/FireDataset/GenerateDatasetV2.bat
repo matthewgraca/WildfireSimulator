@@ -5,7 +5,15 @@ REM Saves WINDDIRGRID and WINDSPEEDGRID TIFs alongside each trial for ML input.
 REM Run from the FireDataset directory. Run SetEnv.bat first.
 setlocal enabledelayedexpansion
 
-:loop
+if not exist ".\Trials" md Trials
+if not exist ".\Outputs" md Outputs
+
+set /a count=1
+
+:loop_start
+if %count% GTR 1600 goto loop_end
+echo Computing trial %count%
+
 set /a "windspeed = (%RANDOM% %% 76) + 5"
 set /a "winddir = %RANDOM% %% 360"
 set /a "moisture = (%RANDOM% %% 60) + 70"
@@ -26,7 +34,8 @@ move .\Outputs\mtt_WINDDIR.tif ".\Trials\!TRIAL_BASE!_winddir.tif"
 rd /S /Q Outputs
 md Outputs
 
-goto loop
+goto loop_start
+:loop_end
 
 :WriteInput
 REM %1 = wind speed, %2 = wind direction, %3 = moisture
@@ -44,7 +53,7 @@ set "INPUTFILE=mtt.input"
 >>"%INPUTFILE%" echo GRIDDED_WINDS_DIURNAL: No
 >>"%INPUTFILE%" echo FOLIAR_MOISTURE_CONTENT: %3
 >>"%INPUTFILE%" echo CROWN_FIRE_METHOD: Finney
->>"%INPUTFILE%" echo NUMBER_PROCESSORS: 4
+>>"%INPUTFILE%" echo NUMBER_PROCESSORS: 8
 >>"%INPUTFILE%" echo.
 >>"%INPUTFILE%" echo MTT_RESOLUTION: 30
 >>"%INPUTFILE%" echo MTT_SIM_TIME: 1440
