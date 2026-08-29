@@ -1,1 +1,0 @@
-palisades.tif mtt.input .\Ignitions\ignition_48.shp 0 .\Outputs\mtt 2 
