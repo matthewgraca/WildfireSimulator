@@ -40,6 +40,11 @@ scenes:
   - landscape: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/classic-palisades/palisades.tif
     trials: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/classic-palisades/Trials/
     ignitions: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/classic-palisades/Ignitions/
+    # Down-sample the old uniform-wind data to ~50% (3211 -> 1606) so it
+    # roughly balances the terrain-aware scenes (932 + 755 = 1687). Reproducible
+    # via seed; no files are deleted on disk. Adjust `limit` to sweep the mix.
+    limit: 1606
+    seed: 42
   - landscape: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/angeles/angeles.tif
     trials: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/angeles/Trials/
     ignitions: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/angeles/Ignitions/

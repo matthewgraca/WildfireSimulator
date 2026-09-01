@@ -1,4 +1,5 @@
 import os
+import random
 import numpy as np
 import rioxarray
 import geopandas as gpd
@@ -68,7 +69,7 @@ class TrialFileLoader:
 class TrialCollection:
     """Fetch all the trial file paths and then fetch the data as needed using the file loader"""
 
-    def __init__(self, loader, trials_dir=None):
+    def __init__(self, loader, trials_dir=None, limit=None, seed=42):
         self.loader = loader
 
         # Load fire trial arrival times from the given directory.
@@ -86,6 +87,18 @@ class TrialCollection:
                     continue  # sidecar wind grid, not a trial
                 fpath = os.path.join(trials_dir, fname)
                 self.files.append(fpath)
+
+        # Optional reproducible subsampling: keep a deterministic random subset
+        # of `limit` trials. Used to balance scene sizes (e.g. down-sampling a
+        # large scene to match a smaller one) without deleting any files on
+        # disk. Same `seed` -> same subset across runs and machines. A `limit`
+        # of None (default) or >= the number of trials keeps all of them.
+        if limit is not None and 0 <= limit < len(self.files):
+            rng = random.Random(seed)
+            chosen = rng.sample(self.files, limit)
+            # Re-sort so downstream ordering/indexing stays stable and
+            # independent of the sampling order.
+            self.files = sorted(chosen)
 
     def __len__(self):
         return len(self.files)

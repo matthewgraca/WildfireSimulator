@@ -29,11 +29,17 @@ def load_config(path=None):
     scenes = config.get('scenes') or []
     resolved_scenes = []
     for scene in scenes:
-        resolved_scenes.append({
+        resolved = {
             'landscape': _resolve_path(base_dir, scene.get('landscape')),
             'trials': _resolve_path(base_dir, scene.get('trials')),
             'ignitions': _resolve_path(base_dir, scene.get('ignitions')),
-        })
+        }
+        # Optional per-scene reproducible subsampling knobs (pass through).
+        if scene.get('limit') is not None:
+            resolved['limit'] = int(scene['limit'])
+        if scene.get('seed') is not None:
+            resolved['seed'] = int(scene['seed'])
+        resolved_scenes.append(resolved)
     config['scenes'] = resolved_scenes
 
     # Model / optimizer defaults (keep existing runs behavior-identical).

@@ -257,7 +257,12 @@ def build_multiscene_dataset(config):
     scene_names = []
     for scene in scenes:
         loader = WildfireDataLoader(
-            TrialCollection(TrialFileLoader(), trials_dir=scene['trials']),
+            TrialCollection(
+                TrialFileLoader(),
+                trials_dir=scene['trials'],
+                limit=scene.get('limit'),
+                seed=scene.get('seed', 42),
+            ),
             landscape_path=scene['landscape'],
             ignitions_dir=scene['ignitions'],
         )
