@@ -25,13 +25,23 @@ scheduled_sampling:
 # Training scenes. Each scene is one landscape with its own trials and
 # ignitions. Relative paths are resolved against this config file's directory.
 # A single-scene list reproduces the original stage-1 behavior.
+#
+# Each scene also accepts two optional subsampling knobs:
+#   limit: keep at most this many trials (omitted = all; a value >= the
+#          trial count is a no-op)
+#   seed:  RNG seed for the subsample (default 42; same seed -> same subset)
+# Subsampling happens in memory and is reproducible; no files are deleted on
+# disk. Use it to balance scene sizes across a multi-scene run.
 scenes:
   - landscape: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/classic-palisades/palisades.tif
     trials: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/classic-palisades/Trials/
     ignitions: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/classic-palisades/Ignitions/
-#  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/angeles/angeles.tif
-#    trials: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/angeles/Trials/
-#    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/angeles/Ignitions/
-#  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/palisades/palisades.tif
-#    trials: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/palisades/Trials/
-#    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/palisades/Ignitions/
+    # Optional: down-sample this scene to e.g. 1000 trials
+    limit: 1600
+    seed: 42
+  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/angeles/angeles.tif
+    trials: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/angeles/Trials/
+    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/angeles/Ignitions/
+  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/palisades/palisades.tif
+    trials: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/palisades/Trials/
+    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/palisades/Ignitions/
