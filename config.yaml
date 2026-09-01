@@ -7,6 +7,11 @@ dt: "1/8"
 # Maximum simulation time (normalized)
 max_t: 1.0
 
+# Segmentation loss: "dice" (DiceLoss) or "dml" (Distance Map Loss,
+# Caliva et al. MIDL 2019, arXiv:1908.03679 — boundary-weighted cross-entropy
+# that upweights errors at the fire front).
+loss: dml
+
 # Optimizer learning rate.
 lr: 5.0e-4
 

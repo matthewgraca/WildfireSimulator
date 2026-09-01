@@ -45,6 +45,7 @@ def load_config(path=None):
     # Model / optimizer defaults (keep existing runs behavior-identical).
     config.setdefault('lr', 5e-4)
     config.setdefault('in_channels', 14)
+    config.setdefault('loss', 'dice')
 
     # Fine-tuning: optional weights-only initialization from a prior checkpoint.
     finetune = config.get('finetune') or {}

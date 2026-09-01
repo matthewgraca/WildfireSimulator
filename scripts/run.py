@@ -18,7 +18,7 @@ from wildfire_simulator.trainers import ForwardBurnTrainer, BurnerBatchProcessor
 from wildfire_simulator.datasets import build_multiscene_dataset, TransformedDataset
 from wildfire_simulator.transforms import MinMaxPerChannel
 from wildfire_simulator.scheduled_sampler import ScheduledSampler
-from wildfire_simulator.losses import DiceLoss
+from wildfire_simulator.losses import DiceLoss, DistanceMapLoss
 from wildfire_simulator.utils import ScalarRNG
 from wildfire_simulator.config import load_config
 
@@ -98,6 +98,16 @@ def main():
         init_from_checkpoint(model, config['finetune']['init_checkpoint'])
         print(f"Initialized weights from {config['finetune']['init_checkpoint']}")
     
+
+    # Loss selection: "dice" (default, existing behavior) or "dml"
+    # (Distance Map Loss, Caliva et al. 2019 — boundary-weighted cross-entropy).
+    loss_name = config.get('loss', 'dice')
+    if loss_name == 'dice':
+        loss_fn = DiceLoss()
+    elif loss_name == 'dml':
+        loss_fn = DistanceMapLoss()
+    else:
+        raise ValueError(f"Unknown loss '{loss_name}' (expected 'dice' or 'dml')")
     checkpoint_cb = ModelCheckpoint(
         monitor='val_loss',
         mode='min',
@@ -151,7 +161,7 @@ def main():
     trainer = ForwardBurnTrainer(
         model=model,
         optimizer=optimizer,
-        loss_fn=DiceLoss(),
+        loss_fn=loss_fn,
         train_loader=train_loader,
         val_loader=val_loader,
         val_loaders=val_loaders,

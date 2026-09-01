@@ -250,7 +250,7 @@ class ForwardBurnTrainer:
 
             # Capture per-component losses from training (last batch)
             train_components = {}
-            for attr in ['last_bce', 'last_dice', 'last_focal', 'last_mask_loss', 'last_arrival_loss']:
+            for attr in ['last_bce', 'last_dice', 'last_focal', 'last_mask_loss', 'last_arrival_loss', 'last_ce', 'last_penalty']:
                 val = getattr(self.loss_fn, attr, None)
                 if val is not None:
                     key = attr.replace('last_', '')
@@ -272,7 +272,7 @@ class ForwardBurnTrainer:
                 metrics[f'val_loss/{scene_name}'] = scene_val
 
             # Capture per-component losses from validation (last batch)
-            for attr in ['last_bce', 'last_dice', 'last_focal', 'last_mask_loss', 'last_arrival_loss']:
+            for attr in ['last_bce', 'last_dice', 'last_focal', 'last_mask_loss', 'last_arrival_loss', 'last_ce', 'last_penalty']:
                 val = getattr(self.loss_fn, attr, None)
                 if val is not None:
                     key = attr.replace('last_', '')

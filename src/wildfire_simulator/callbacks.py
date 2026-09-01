@@ -47,7 +47,7 @@ class TensorBoardCallback:
                 self.val_writer.add_scalar(f"Loss/scene/{scene}", value, epoch)
 
         # Log per-component losses if available
-        for key in ['bce', 'dice', 'focal', 'mask_loss', 'arrival_loss']:
+        for key in ['bce', 'dice', 'focal', 'mask_loss', 'arrival_loss', 'ce', 'penalty']:
             train_key = f'train_{key}'
             val_key = f'val_{key}'
             if train_key in metrics:

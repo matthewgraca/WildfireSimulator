@@ -344,6 +344,10 @@ def plot_training_curves(logdir, output_dir):
     legacy_components = ['Loss/mask_bce', 'Loss/arrival_mse']
     has_legacy_components = any(tag in available_tags for tag in legacy_components)
 
+    # DistanceMapLoss components
+    dml_components = ['Loss/ce', 'Loss/penalty']
+    has_dml_components = any(tag in available_tags for tag in dml_components)
+
     if has_fire_components:
         # Plot combined + 3 FireSenseNet components
         fig, axes = plt.subplots(1, 4, figsize=(20, 5))
@@ -417,6 +421,40 @@ def plot_training_curves(logdir, output_dir):
             axes[2].set_title('Arrival Time Loss (MSE)')
             axes[2].legend()
             axes[2].grid(True, alpha=0.3)
+
+        fig.suptitle('Training & Validation Loss', fontsize=13)
+        fig.tight_layout()
+
+    elif has_dml_components:
+        # Plot combined + 2 DistanceMapLoss components
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+        # Combined loss
+        axes[0].plot(train_steps, train_values, label='Train', linewidth=1.5)
+        axes[0].plot(val_steps, val_values, label='Val', linewidth=1.5)
+        axes[0].set_xlabel('Epoch')
+        axes[0].set_ylabel('Loss')
+        axes[0].set_title('Combined Loss (Distance Map)')
+        axes[0].legend()
+        axes[0].grid(True, alpha=0.3)
+
+        component_info = [
+            ('Loss/ce', 'Cross-Entropy (unweighted)', 'Loss'),
+            ('Loss/penalty', 'Boundary Penalty Term', 'Loss'),
+        ]
+        for idx, (tag, title, ylabel) in enumerate(component_info):
+            ax = axes[idx + 1]
+            if tag in available_tags:
+                train_data = train_acc.Scalars(tag)
+                ax.plot([s.step for s in train_data], [s.value for s in train_data], label='Train', linewidth=1.5)
+            if tag in val_tags:
+                val_data = val_acc.Scalars(tag)
+                ax.plot([s.step for s in val_data], [s.value for s in val_data], label='Val', linewidth=1.5)
+            ax.set_xlabel('Epoch')
+            ax.set_ylabel(ylabel)
+            ax.set_title(title)
+            ax.legend()
+            ax.grid(True, alpha=0.3)
 
         fig.suptitle('Training & Validation Loss', fontsize=13)
         fig.tight_layout()
