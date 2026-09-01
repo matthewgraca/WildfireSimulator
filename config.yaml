@@ -7,6 +7,9 @@ dt: "1/8"
 # Maximum simulation time (normalized)
 max_t: 1.0
 
+# Optimizer learning rate.
+lr: 5.0e-4
+
 # Scheduled sampling parameters
 # k: steepness of sigmoid transition
 # t0: epoch at which probability = 50%

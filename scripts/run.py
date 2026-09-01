@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader, random_split
 from torch.utils.tensorboard import SummaryWriter
 
 from wildfire_simulator.models import MK_UNet_Regression
+from wildfire_simulator.checkpoints import init_from_checkpoint
 from wildfire_simulator.callbacks import ModelCheckpoint, TensorBoardCallback
 from wildfire_simulator.forward_burn_process import ForwardBurnProcess
 from wildfire_simulator.trainers import ForwardBurnTrainer, BurnerBatchProcessor
@@ -78,11 +79,18 @@ def main():
     )
     
     model = MK_UNet_Regression(
-        in_channels=14,
+        in_channels=config['in_channels'],
         out_channels=1,
         channels=[16, 32, 64, 96, 160],
         final_activation='sigmoid'
     )
+
+    # Fine-tune: optionally initialize weights from a prior checkpoint
+    # (weights only — fresh optimizer, epoch counter starts at 0). No-op when
+    # unset, so from-scratch runs are unaffected.
+    if config['finetune']['init_checkpoint']:
+        init_from_checkpoint(model, config['finetune']['init_checkpoint'])
+        print(f"Initialized weights from {config['finetune']['init_checkpoint']}")
     
     checkpoint_cb = ModelCheckpoint(
         monitor='val_loss',
@@ -100,7 +108,7 @@ def main():
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
-        5e-4,
+        config['lr'],
         weight_decay=1e-4
     )
 

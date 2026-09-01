@@ -34,10 +34,10 @@ from wildfire_simulator.transforms import MinMaxPerChannel
 from wildfire_simulator.config import load_config
 
 
-def load_model(checkpoint_path, device):
+def load_model(checkpoint_path, device, in_channels=14):
     """Load model from checkpoint."""
     model = MK_UNet_Regression(
-        in_channels=14,
+        in_channels=in_channels,
         out_channels=1,
         channels=[16, 32, 64, 96, 160],
         final_activation='sigmoid'
@@ -581,7 +581,7 @@ def main():
 
     # ─── Load Model ───────────────────────────────────────────────────────
     print(f"Checkpoint: {checkpoint}")
-    model, ckpt_epoch = load_model(checkpoint, device)
+    model, ckpt_epoch = load_model(checkpoint, device, in_channels=config['in_channels'])
     print(f"Loaded epoch: {ckpt_epoch}")
 
     # ─── Load Data ────────────────────────────────────────────────────────

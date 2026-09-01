@@ -36,6 +36,16 @@ def load_config(path=None):
         })
     config['scenes'] = resolved_scenes
 
+    # Model / optimizer defaults (keep existing runs behavior-identical).
+    config.setdefault('lr', 5e-4)
+    config.setdefault('in_channels', 14)
+
+    # Fine-tuning: optional weights-only initialization from a prior checkpoint.
+    finetune = config.get('finetune') or {}
+    init_ckpt = finetune.get('init_checkpoint')
+    finetune['init_checkpoint'] = _resolve_path(base_dir, init_ckpt)
+    config['finetune'] = finetune
+
     return config
 
 
