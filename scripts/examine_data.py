@@ -25,6 +25,7 @@ from wildfire_simulator.forward_burn_process import ForwardBurnProcess
 from wildfire_simulator.transforms import MinMaxPerChannel
 from wildfire_simulator.dataloader import WildfireDataLoader, TrialFileLoader, TrialCollection
 from wildfire_simulator.datasets import WildfireDataset
+from wildfire_simulator.config import load_config
 from torch.utils.data import random_split
 
 
@@ -32,10 +33,15 @@ def main():
     parser = argparse.ArgumentParser(description="Visualize burn process at each time step")
     parser.add_argument("--sample", type=int, default=0, help="Sample index from test set")
     parser.add_argument("--num_steps", type=int, default=8, help="Number of time steps to show")
-    parser.add_argument("--dt", type=float, default=1/48, help="Time step size (default: 1/48)")
-    parser.add_argument("--max_t", type=float, default=1.0, help="Maximum time")
+    parser.add_argument("--dt", type=float, default=None, help="Time step size (default: from config)")
+    parser.add_argument("--max_t", type=float, default=None, help="Maximum time (default: from config)")
+    parser.add_argument("--config", type=str, default=None, help="Path to config file")
     parser.add_argument("--output", type=str, default="./tmp/examine_data.png", help="Output path")
     args = parser.parse_args()
+
+    config = load_config(args.config)
+    args.dt = args.dt if args.dt is not None else config['dt']
+    args.max_t = args.max_t if args.max_t is not None else config['max_t']
 
     # Load test set (same split as training)
     dataloader = WildfireDataLoader(TrialCollection(TrialFileLoader()))
@@ -73,6 +79,11 @@ def main():
     for col, t in enumerate(times):
         # What the model sees as input at this time step
         burned_input = burner(sample_transformed, t)
+        # Quantize FAT to match training (ceil to next dt boundary)
+        fat = burned_input[1]
+        fat_nonzero = fat > 0
+        burned_input[1][fat_nonzero] = torch.ceil(fat[fat_nonzero] / args.dt) * args.dt
+
         # What the model should predict (target at t + dt)
         burned_target = burner(sample_transformed, t + args.dt)
 

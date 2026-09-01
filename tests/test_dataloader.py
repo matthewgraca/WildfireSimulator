@@ -48,19 +48,28 @@ def test_trials(dataloader):
         trials_expected = pickle.load(file)
 
     for idx, trial in enumerate(trials):
-        for k, v in trial.items():
+        # Iterate over the keys captured in the baseline. Newer keys added to
+        # the trial dict later (e.g. per-cell wind grids) are not present in the
+        # baseline and are intentionally not asserted here.
+        for k, v in trials_expected[idx].items():
             if k == "fire":
-                assert (v == trials_expected[idx]["fire"]).all()
+                assert (trial[k] == v).all()
             else:
-                assert v == trials_expected[idx][k]
+                assert trial[k] == v
 
 def test_trial_collection_laziness():
+    from pathlib import Path
+
     class FakeTrialFileLoader:
         def load(self, file_path):
             return self.data
 
     loader = FakeTrialFileLoader()
-    trials = TrialCollection(loader)
+    # Point at the test Trials dir so at least one file path is discovered;
+    # the fake loader ignores the path and returns self.data, which is what
+    # this test exercises (lazy load on each __getitem__).
+    trials_dir = str(Path(__file__).parent / "data" / "Trials")
+    trials = TrialCollection(loader, trials_dir=trials_dir)
 
     loader.data = "example data"
     assert trials[0] == "example data"

@@ -23,7 +23,30 @@ def load_config(path=None):
     if isinstance(config.get('dt'), str):
         config['dt'] = _eval_fraction(config['dt'])
 
+    # Resolve scene paths relative to the config file's directory so training
+    # works regardless of the current working directory.
+    base_dir = config_path.parent
+    scenes = config.get('scenes') or []
+    resolved_scenes = []
+    for scene in scenes:
+        resolved_scenes.append({
+            'landscape': _resolve_path(base_dir, scene.get('landscape')),
+            'trials': _resolve_path(base_dir, scene.get('trials')),
+            'ignitions': _resolve_path(base_dir, scene.get('ignitions')),
+        })
+    config['scenes'] = resolved_scenes
+
     return config
+
+
+def _resolve_path(base_dir, p):
+    """Resolve ``p`` against ``base_dir`` if relative; leave absolute paths as-is."""
+    if p is None:
+        return None
+    path = Path(p)
+    if not path.is_absolute():
+        path = base_dir / path
+    return str(path)
 
 
 def _eval_fraction(s):

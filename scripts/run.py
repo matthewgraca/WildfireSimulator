@@ -15,7 +15,7 @@ from wildfire_simulator.callbacks import ModelCheckpoint, TensorBoardCallback
 from wildfire_simulator.forward_burn_process import ForwardBurnProcess
 from wildfire_simulator.trainers import ForwardBurnTrainer, BurnerBatchProcessor
 from wildfire_simulator.dataloader import TrialCollection, TrialFileLoader, WildfireDataLoader 
-from wildfire_simulator.datasets import WildfireDataset, TransformedDataset
+from wildfire_simulator.datasets import WildfireDataset, MultiSceneDataset, TransformedDataset
 from wildfire_simulator.transforms import MinMaxPerChannel
 from wildfire_simulator.scheduled_sampler import ScheduledSampler
 from wildfire_simulator.losses import DiceLoss
@@ -34,10 +34,20 @@ def main():
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    dataloader = WildfireDataLoader(TrialCollection(TrialFileLoader()))
+    # Build one WildfireDataset per scene (landscape + trials + ignitions),
+    # then concatenate them under a single shared normalization.
+    scene_datasets = []
+    for scene in config['scenes']:
+        loader = WildfireDataLoader(
+            TrialCollection(TrialFileLoader(), trials_dir=scene['trials']),
+            landscape_path=scene['landscape'],
+            ignitions_dir=scene['ignitions'],
+        )
+        scene_datasets.append(WildfireDataset(loader))
 
-    dataset = WildfireDataset(dataloader)
+    dataset = MultiSceneDataset(scene_datasets)
 
+    # Random 80/20 split across all samples from all scenes.
     train_size = int(0.8 * len(dataset))
     test_size = len(dataset) - train_size
     generator = torch.Generator().manual_seed(42)

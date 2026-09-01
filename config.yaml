@@ -13,3 +13,17 @@ max_t: 1.0
 scheduled_sampling:
   k: 0.1
   t0: 30
+
+# Training scenes. Each scene is one landscape with its own trials and
+# ignitions. Relative paths are resolved against this config file's directory.
+# A single-scene list reproduces the original stage-1 behavior.
+scenes:
+  - landscape: FlamMapData/classic-palisades/palisades.tif
+    trials: FlamMapData/classic-palisades/Trials/
+    ignitions: FlamMapData/classic-palisades/Ignitions/
+#  - landscape: FlamMapData/angeles/angeles.tif
+#    trials: FlamMapData/angeles/Trials/
+#    ignitions: FlamMapData/angeles/Ignitions/
+#  - landscape: FlamMapData/palisades/palisades.tif
+#    trials: FlamMapData/palisades/Trials/
+#    ignitions: FlamMapData/palisades/Ignitions/

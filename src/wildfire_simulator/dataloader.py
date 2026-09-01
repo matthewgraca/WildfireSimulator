@@ -2,7 +2,6 @@ import os
 import numpy as np
 import rioxarray
 import geopandas as gpd
-from dotenv import load_dotenv
 
 class TrialFileLoader:
     """Loads data of trial file as a dict"""
@@ -69,14 +68,10 @@ class TrialFileLoader:
 class TrialCollection:
     """Fetch all the trial file paths and then fetch the data as needed using the file loader"""
 
-    def __init__(self, loader):
-        # Load environment from .env file
-        load_dotenv()
-
+    def __init__(self, loader, trials_dir=None):
         self.loader = loader
 
-        # Load fire trial arrival times from TRIALS directory
-        trials_dir = os.getenv("TRIALS")
+        # Load fire trial arrival times from the given directory.
         self.files = []
         if trials_dir and os.path.isdir(trials_dir):
             for fname in sorted(os.listdir(trials_dir)):
@@ -94,18 +89,15 @@ class TrialCollection:
 class WildfireDataLoader:
     """Loads landscape and trial GeoTIFFs as well as ignition shape files"""
 
-    def __init__(self, trials):
-        # Load environment from .env file
-        load_dotenv()
-
+    def __init__(self, trials, landscape_path, ignitions_dir):
         self.trials = trials
 
-        tif_path = os.getenv("LANDSCAPE")
-        if not tif_path:
-            raise EnvironmentError(
-                "Environment variable 'LANDSCAPE' is not set. "
-                "Make sure your .env file contains LANDSCAPE=<path>"
+        if not landscape_path:
+            raise ValueError(
+                "WildfireDataLoader requires a landscape_path "
+                "(path to the 8-band landscape GeoTIFF)."
             )
+        tif_path = landscape_path
 
         # Open the GeoTIFF with rioxarray – returns an xarray.DataArray
         da = rioxarray.open_rasterio(tif_path)
@@ -145,8 +137,7 @@ class WildfireDataLoader:
         self.canopy_bulk_density = da.isel(band=7).values
         self.canopy_bulk_density[self.canopy_bulk_density == -9999] = 0
 
-        # Load ignition points from IGNITIONS directory
-        ignitions_dir = os.getenv("IGNITIONS")
+        # Load ignition points from the ignitions directory
         self.ignitions = {}
         if ignitions_dir and os.path.isdir(ignitions_dir):
             from rasterio.transform import rowcol

@@ -29,7 +29,7 @@ from wildfire_simulator.models import MK_UNet_Regression
 from wildfire_simulator.forward_burn_process import ForwardBurnProcess
 from wildfire_simulator.simulators import ForwardBurnSimulator, fire_burn_step
 from wildfire_simulator.dataloader import TrialCollection, TrialFileLoader, WildfireDataLoader
-from wildfire_simulator.datasets import WildfireDataset, TransformedDataset
+from wildfire_simulator.datasets import WildfireDataset, MultiSceneDataset, TransformedDataset
 from wildfire_simulator.transforms import MinMaxPerChannel
 from wildfire_simulator.config import load_config
 
@@ -50,10 +50,22 @@ def load_model(checkpoint_path, device):
     return model, epoch
 
 
-def get_test_dataset():
-    """Load dataset and return the test split (same split as training)."""
-    dataloader = WildfireDataLoader(TrialCollection(TrialFileLoader()))
-    dataset = WildfireDataset(dataloader)
+def get_test_dataset(config):
+    """Load dataset and return the test split (same split as training).
+
+    Mirrors the scene-building and validation-split logic in run.py so the
+    evaluated test set matches what training held out.
+    """
+    scene_datasets = []
+    for scene in config['scenes']:
+        loader = WildfireDataLoader(
+            TrialCollection(TrialFileLoader(), trials_dir=scene['trials']),
+            landscape_path=scene['landscape'],
+            ignitions_dir=scene['ignitions'],
+        )
+        scene_datasets.append(WildfireDataset(loader))
+
+    dataset = MultiSceneDataset(scene_datasets)
 
     train_size = int(0.8 * len(dataset))
     test_size = len(dataset) - train_size
@@ -574,7 +586,7 @@ def main():
 
     # ─── Load Data ────────────────────────────────────────────────────────
     print("\nLoading dataset...")
-    test_set, transform, full_dataset = get_test_dataset()
+    test_set, transform, full_dataset = get_test_dataset(config)
     print(f"  Dataset size:  {len(full_dataset)}")
     print(f"  Test split:    {len(test_set)}")
 

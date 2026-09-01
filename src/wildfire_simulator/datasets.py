@@ -25,6 +25,18 @@ class WildfireDataset(Dataset):
         cy, cx = self.loader.ignitions[ig_idx]
         half = 250
 
+        # Guard: the fixed 500x500 crop must fit within the landscape raster.
+        # If an ignition sits within `half` pixels of an edge, numpy slicing
+        # would silently return an undersized array and misalign the channel
+        # stack. Fail loudly instead.
+        H, W = self.loader.elevation.shape
+        if cy - half < 0 or cx - half < 0 or cy + half > H or cx + half > W:
+            raise ValueError(
+                f"Ignition {ig_idx} at (row={cy}, col={cx}) is too close to the "
+                f"landscape edge for a {2*half}x{2*half} crop "
+                f"(landscape is {H}x{W}). Trial: {trial.get('filename', idx)}."
+            )
+
         # 8 landscape layers in order
         land_layers = [
             self.loader.elevation,
@@ -86,6 +98,63 @@ class WildfireDataset(Dataset):
     def __getitem__(self, idx):
         channels = self._load_raw_channels(idx)
         return torch.from_numpy(channels).to(torch.float32)
+
+
+class MultiSceneDataset(Dataset):
+    """Concatenates several single-scene ``WildfireDataset`` instances into one
+    flat, indexable dataset with a single shared normalization.
+
+    Each scene is a ``WildfireDataset`` bound to its own landscape / trials /
+    ignitions. A "scene" therefore owns its own terrain crops and its own
+    ignition-index namespace, so ignition indices never collide across scenes.
+
+    This class is pure routing plus statistic aggregation: all cropping, wind
+    conversion, and channel assembly stays in ``WildfireDataset``. Downstream
+    code (``random_split``, ``TransformedDataset``, ``DataLoader``) sees the
+    same interface as a single ``WildfireDataset``: ``__len__``, ``__getitem__``
+    returning a ``(13, 500, 500)`` tensor, and ``min_val`` / ``max_val``.
+    """
+
+    def __init__(self, scene_datasets):
+        if not scene_datasets:
+            raise ValueError("MultiSceneDataset requires at least one scene.")
+        self.scenes = list(scene_datasets)
+
+        # Flat global index -> (scene_id, local_idx). Iteration order is stable
+        # (scene 0 first, then scene 1, ...), which the leave-scene-out helper
+        # relies on to produce contiguous per-scene index ranges.
+        self.index_map = [
+            (scene_id, local_idx)
+            for scene_id, ds in enumerate(self.scenes)
+            for local_idx in range(len(ds))
+        ]
+
+        # Shared normalization: combine per-scene stats that each WildfireDataset
+        # already computed in its own __init__. No re-scan of the data needed.
+        self.min_val = np.minimum.reduce([ds.min_val for ds in self.scenes])
+        self.max_val = np.maximum.reduce([ds.max_val for ds in self.scenes])
+
+    def __len__(self):
+        return len(self.index_map)
+
+    def __getitem__(self, idx):
+        scene_id, local_idx = self.index_map[idx]
+        return self.scenes[scene_id][local_idx]
+
+    def scene_indices(self, scene_id):
+        """Return the list of global indices belonging to ``scene_id``.
+
+        Useful for a leave-scene-out validation split: hold out one scene's
+        indices for validation and use the rest for training.
+        """
+        return [
+            global_idx
+            for global_idx, (s_id, _) in enumerate(self.index_map)
+            if s_id == scene_id
+        ]
+
+    def num_scenes(self):
+        return len(self.scenes)
 
 
 class TransformedDataset:
