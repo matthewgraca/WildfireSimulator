@@ -28,11 +28,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from wildfire_simulator.models import MK_UNet_Regression
 from wildfire_simulator.forward_burn_process import ForwardBurnProcess
 from wildfire_simulator.trainers import ForwardBurnTrainer, BurnerBatchProcessor
-from wildfire_simulator.dataloader import TrialCollection, TrialFileLoader, WildfireDataLoader
-from wildfire_simulator.datasets import WildfireDataset, TransformedDataset
+from wildfire_simulator.datasets import build_multiscene_dataset, TransformedDataset
 from wildfire_simulator.transforms import MinMaxPerChannel
 from wildfire_simulator.simulators import ForwardBurnSimulator, fire_burn_step
 from wildfire_simulator.utils import ScalarRNG
+from wildfire_simulator.config import load_config
 
 
 class ConstSampler:
@@ -304,7 +304,11 @@ def main():
     parser = argparse.ArgumentParser(description="Preflight checks for training")
     parser.add_argument('--output-dir', type=str, default='./tmp/preflight',
                         help='Directory to save diagnostic outputs')
+    parser.add_argument('--config', type=str, default=None,
+                        help='Path to config file (default: config.yaml in project root)')
     args = parser.parse_args()
+
+    config = load_config(args.config)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -316,8 +320,7 @@ def main():
     print(f"  Device: {device}")
 
     # Load data
-    dataloader = WildfireDataLoader(TrialCollection(TrialFileLoader()))
-    dataset = WildfireDataset(dataloader)
+    dataset = build_multiscene_dataset(config)
     transform = MinMaxPerChannel(dataset.min_val, dataset.max_val)
     print(f"  Dataset: {len(dataset)} samples")
 

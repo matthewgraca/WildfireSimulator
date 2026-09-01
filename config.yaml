@@ -21,12 +21,12 @@ scheduled_sampling:
 # ignitions. Relative paths are resolved against this config file's directory.
 # A single-scene list reproduces the original stage-1 behavior.
 scenes:
-  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/classic-palisades/palisades.tif
-    trials: /mnt/wildfire/surrogate-model/FlamMapData/classic-palisades/Trials/
-    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/classic-palisades/Ignitions/
-#  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/angeles/angeles.tif
-#    trials: /mnt/wildfire/surrogate-model/FlamMapData/angeles/Trials/
-#    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/angeles/Ignitions/
-#  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/palisades/palisades.tif
-#    trials: /mnt/wildfire/surrogate-model/FlamMapData/palisades/Trials/
-#    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/palisades/Ignitions/
+  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/classic-palisades/palisades.tif
+    trials: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/classic-palisades/Trials/
+    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/classic-palisades/Ignitions/
+#  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/angeles/angeles.tif
+#    trials: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/angeles/Trials/
+#    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/angeles/Ignitions/
+#  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/palisades/palisades.tif
+#    trials: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/palisades/Trials/
+#    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/palisades/Ignitions/

@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split, Subset
+from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
 
 from wildfire_simulator.models import MK_UNet_Regression
@@ -15,8 +15,7 @@ from wildfire_simulator.checkpoints import init_from_checkpoint
 from wildfire_simulator.callbacks import ModelCheckpoint, TensorBoardCallback
 from wildfire_simulator.forward_burn_process import ForwardBurnProcess
 from wildfire_simulator.trainers import ForwardBurnTrainer, BurnerBatchProcessor
-from wildfire_simulator.dataloader import TrialCollection, TrialFileLoader, WildfireDataLoader 
-from wildfire_simulator.datasets import WildfireDataset, MultiSceneDataset, TransformedDataset
+from wildfire_simulator.datasets import build_multiscene_dataset, TransformedDataset
 from wildfire_simulator.transforms import MinMaxPerChannel
 from wildfire_simulator.scheduled_sampler import ScheduledSampler
 from wildfire_simulator.losses import DiceLoss
@@ -35,24 +34,9 @@ def main():
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    # Build one WildfireDataset per scene (landscape + trials + ignitions),
-    # then concatenate them under a single shared normalization.
-    scene_datasets = []
-    scene_names = []
-    for scene in config['scenes']:
-        loader = WildfireDataLoader(
-            TrialCollection(TrialFileLoader(), trials_dir=scene['trials']),
-            landscape_path=scene['landscape'],
-            ignitions_dir=scene['ignitions'],
-        )
-        scene_datasets.append(WildfireDataset(loader))
-        # Stable, readable scene name from the landscape's parent directory
-        # (e.g. .../landscapes/angeles/angeles.tif -> "angeles"). The parent
-        # disambiguates scenes whose inner .tif shares a name (e.g. two
-        # different "palisades.tif" under classic-palisades/ vs palisades/).
-        scene_names.append(Path(scene['landscape']).parent.name)
-
-    dataset = MultiSceneDataset(scene_datasets, scene_names=scene_names)
+    # Build the multi-scene dataset (one scene per landscape/trials/ignitions),
+    # concatenated under a single shared normalization.
+    dataset = build_multiscene_dataset(config)
 
     # Stratified per-scene 80/20 split: guarantees every scene (including the
     # terrain-aware ones) is present in validation, and yields per-scene val

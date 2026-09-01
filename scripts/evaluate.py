@@ -23,13 +23,11 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
-from torch.utils.data import DataLoader, random_split
 
 from wildfire_simulator.models import MK_UNet_Regression
 from wildfire_simulator.forward_burn_process import ForwardBurnProcess
 from wildfire_simulator.simulators import ForwardBurnSimulator, fire_burn_step
-from wildfire_simulator.dataloader import TrialCollection, TrialFileLoader, WildfireDataLoader
-from wildfire_simulator.datasets import WildfireDataset, MultiSceneDataset, TransformedDataset
+from wildfire_simulator.datasets import build_multiscene_dataset
 from wildfire_simulator.transforms import MinMaxPerChannel
 from wildfire_simulator.config import load_config
 
@@ -56,20 +54,7 @@ def get_test_dataset(config):
     Mirrors the scene-building and validation-split logic in run.py so the
     evaluated test set matches what training held out.
     """
-    scene_datasets = []
-    scene_names = []
-    for scene in config['scenes']:
-        loader = WildfireDataLoader(
-            TrialCollection(TrialFileLoader(), trials_dir=scene['trials']),
-            landscape_path=scene['landscape'],
-            ignitions_dir=scene['ignitions'],
-        )
-        scene_datasets.append(WildfireDataset(loader))
-        # Scene name from the landscape's parent directory (disambiguates
-        # scenes whose inner .tif shares a name). Must match run.py.
-        scene_names.append(Path(scene['landscape']).parent.name)
-
-    dataset = MultiSceneDataset(scene_datasets, scene_names=scene_names)
+    dataset = build_multiscene_dataset(config)
 
     # Same stratified per-scene split as training (deterministic seed), so the
     # evaluated validation samples match what training held out, per scene.

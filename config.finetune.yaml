@@ -37,12 +37,12 @@ scheduled_sampling:
 # terrain-aware landscapes. Bias the effective mix toward the new data by
 # curating trial counts per scene as desired.
 scenes:
-  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/classic-palisades/palisades.tif
-    trials: /mnt/wildfire/surrogate-model/FlamMapData/classic-palisades/Trials/
-    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/classic-palisades/Ignitions/
-  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/angeles/angeles.tif
-    trials: /mnt/wildfire/surrogate-model/FlamMapData/angeles/Trials/
-    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/angeles/Ignitions/
-  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/palisades/palisades.tif
-    trials: /mnt/wildfire/surrogate-model/FlamMapData/palisades/Trials/
-    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/palisades/Ignitions/
+  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/classic-palisades/palisades.tif
+    trials: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/classic-palisades/Trials/
+    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/classic-palisades/Ignitions/
+  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/angeles/angeles.tif
+    trials: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/angeles/Trials/
+    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/angeles/Ignitions/
+  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/palisades/palisades.tif
+    trials: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/palisades/Trials/
+    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/landscapes/palisades/Ignitions/

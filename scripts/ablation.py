@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.utils.data import random_split
+from torch.utils.data import Subset
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -28,8 +28,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from wildfire_simulator.models import MK_UNet_Regression
 from wildfire_simulator.forward_burn_process import ForwardBurnProcess
 from wildfire_simulator.simulators import ForwardBurnSimulator, fire_burn_step
-from wildfire_simulator.dataloader import TrialCollection, TrialFileLoader, WildfireDataLoader
-from wildfire_simulator.datasets import WildfireDataset
+from wildfire_simulator.datasets import build_multiscene_dataset
 from wildfire_simulator.transforms import MinMaxPerChannel
 from wildfire_simulator.config import load_config
 
@@ -299,14 +298,11 @@ def main():
     # Load model
     model = load_model(checkpoint_path, device)
 
-    # Load dataset with same split as training
-    dataloader = WildfireDataLoader(TrialCollection(TrialFileLoader()))
-    dataset = WildfireDataset(dataloader)
-
-    train_size = int(0.8 * len(dataset))
-    test_size = len(dataset) - train_size
-    generator = torch.Generator().manual_seed(42)
-    train_set, test_set = random_split(dataset, [train_size, test_size], generator=generator)
+    # Load dataset with same stratified per-scene split as training
+    dataset = build_multiscene_dataset(config)
+    train_indices, val_indices, _ = dataset.stratified_split(val_frac=0.2, seed=42)
+    train_set = Subset(dataset, train_indices)
+    test_set = Subset(dataset, val_indices)
 
     transform = MinMaxPerChannel(dataset.min_val, dataset.max_val)
 

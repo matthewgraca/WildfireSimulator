@@ -23,10 +23,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from wildfire_simulator.forward_burn_process import ForwardBurnProcess
 from wildfire_simulator.transforms import MinMaxPerChannel
-from wildfire_simulator.dataloader import WildfireDataLoader, TrialFileLoader, TrialCollection
-from wildfire_simulator.datasets import WildfireDataset
+from wildfire_simulator.datasets import build_multiscene_dataset
 from wildfire_simulator.config import load_config
-from torch.utils.data import random_split
+from torch.utils.data import Subset
 
 
 def main():
@@ -43,14 +42,10 @@ def main():
     args.dt = args.dt if args.dt is not None else config['dt']
     args.max_t = args.max_t if args.max_t is not None else config['max_t']
 
-    # Load test set (same split as training)
-    dataloader = WildfireDataLoader(TrialCollection(TrialFileLoader()))
-    dataset = WildfireDataset(dataloader)
-
-    train_size = int(0.8 * len(dataset))
-    test_size = len(dataset) - train_size
-    generator = torch.Generator().manual_seed(42)
-    _, test_set = random_split(dataset, [train_size, test_size], generator=generator)
+    # Load test set (same stratified per-scene split as training)
+    dataset = build_multiscene_dataset(config)
+    _, val_indices, _ = dataset.stratified_split(val_frac=0.2, seed=42)
+    test_set = Subset(dataset, val_indices)
 
     transform = MinMaxPerChannel(dataset.min_val, dataset.max_val)
     burner = ForwardBurnProcess()

@@ -221,3 +221,48 @@ class TransformedDataset:
     def __getitem__(self, idx):
         return self.transform(self.dataset[idx])
 
+
+def build_multiscene_dataset(config):
+    """Build a ``MultiSceneDataset`` from ``config['scenes']``.
+
+    Shared by all scripts (run, evaluate, ablation, preflight, examine_data) so
+    scene assembly, scene naming, and shared normalization live in one place.
+
+    Scene names are derived from each landscape's parent directory, which
+    disambiguates scenes whose inner .tif shares a filename (e.g. two different
+    ``palisades.tif`` under ``classic-palisades/`` and ``palisades/``).
+
+    Args:
+        config: parsed config dict; must contain a ``scenes`` list of
+            ``{landscape, trials, ignitions}`` entries.
+
+    Returns:
+        A ``MultiSceneDataset`` (exposes ``min_val``/``max_val`` for building a
+        ``MinMaxPerChannel`` transform, and ``stratified_split`` for splitting).
+    """
+    # Imported here to avoid a circular import at module load time.
+    from wildfire_simulator.dataloader import (
+        TrialCollection, TrialFileLoader, WildfireDataLoader,
+    )
+    from pathlib import Path
+
+    scenes = config.get('scenes') or []
+    if not scenes:
+        raise ValueError(
+            "config['scenes'] is empty; at least one scene "
+            "{landscape, trials, ignitions} is required."
+        )
+
+    scene_datasets = []
+    scene_names = []
+    for scene in scenes:
+        loader = WildfireDataLoader(
+            TrialCollection(TrialFileLoader(), trials_dir=scene['trials']),
+            landscape_path=scene['landscape'],
+            ignitions_dir=scene['ignitions'],
+        )
+        scene_datasets.append(WildfireDataset(loader))
+        scene_names.append(Path(scene['landscape']).parent.name)
+
+    return MultiSceneDataset(scene_datasets, scene_names=scene_names)
+
