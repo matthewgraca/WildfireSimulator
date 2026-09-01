@@ -12,7 +12,6 @@ Usage:
 """
 
 import argparse
-import csv
 import os
 import sys
 from pathlib import Path
@@ -509,8 +508,8 @@ def build_per_sample_table(all_metrics):
     return format_table(headers, rows)
 
 
-def build_summary_table(all_metrics):
-    """Build a summary table with mean and std across all samples."""
+def _summary_table_rows(all_metrics):
+    """Return (headers, rows) for the overall summary table."""
     headers = ["Metric", "Mean", "Std", "Min", "Max"]
     keys = ['mse_arrival', 'mae_arrival',
             'iou', 'dice', 'precision', 'recall']
@@ -518,11 +517,16 @@ def build_summary_table(all_metrics):
     for key in keys:
         values = [m[key] for m in all_metrics]
         rows.append([key, np.mean(values), np.std(values), np.min(values), np.max(values)])
-    return format_table(headers, rows)
+    return headers, rows
 
 
-def build_per_scene_summary_table(metrics_by_scene):
-    """Build a table comparing key metrics across scenes (one row per scene).
+def build_summary_table(all_metrics):
+    """Build a summary table with mean and std across all samples."""
+    return format_table(*_summary_table_rows(all_metrics))
+
+
+def _per_scene_summary_table_rows(metrics_by_scene):
+    """Return (headers, rows) comparing key metrics across scenes (one row per scene).
 
     ``metrics_by_scene`` maps scene name -> list of per-sample metric dicts.
     This is the table that isolates new-regime (terrain-aware) performance.
@@ -538,7 +542,12 @@ def build_per_scene_summary_table(metrics_by_scene):
         for key in keys:
             row.append(float(np.mean([m[key] for m in metrics])))
         rows.append(row)
-    return format_table(headers, rows)
+    return headers, rows
+
+
+def build_per_scene_summary_table(metrics_by_scene):
+    """Build a text table comparing key metrics across scenes (one row per scene)."""
+    return format_table(*_per_scene_summary_table_rows(metrics_by_scene))
 
 
 def build_training_table(train_data, val_data):
@@ -558,16 +567,62 @@ def build_training_table(train_data, val_data):
     return format_table(headers, rows)
 
 
-def save_metrics_csv(all_metrics, filepath, scenes=None):
-    """Save per-sample metrics as CSV, optionally tagged by scene."""
-    keys = ['mse_arrival', 'mae_arrival',
-            'iou', 'dice', 'precision', 'recall']
-    with open(filepath, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['sample', 'scene'] + keys)
-        for i, m in enumerate(all_metrics):
-            scene = scenes[i] if scenes is not None else ""
-            writer.writerow([i, scene] + [m[k] for k in keys])
+def save_metrics_table_image(all_metrics, metrics_by_scene, filepath,
+                             checkpoint=None, ckpt_epoch=None, dt=None, max_t=None):
+    """Render the per-scene and overall summary tables as a single PNG image.
+
+    Replaces the previous metrics.csv / summary.txt outputs.
+    """
+    scene_headers, scene_rows = _per_scene_summary_table_rows(metrics_by_scene)
+    sum_headers, sum_rows = _summary_table_rows(all_metrics)
+
+    def fmt(v):
+        if isinstance(v, float):
+            return f"{v:.4f}"
+        return str(v)
+
+    ratios = [max(len(scene_rows), 1), len(sum_rows)]
+    fig, axes = plt.subplots(2, 1, figsize=(10, 0.55 * (sum(ratios) + 2) + 1.8),
+                             gridspec_kw={"height_ratios": ratios})
+
+    meta = []
+    if checkpoint:
+        meta.append(f"checkpoint: {os.path.basename(checkpoint)}")
+    if ckpt_epoch is not None:
+        meta.append(f"epoch: {ckpt_epoch}")
+    if dt is not None and max_t is not None:
+        meta.append(f"dt: {dt}, max_t: {max_t}")
+    title = f"Evaluation Results ({len(all_metrics)} samples)"
+    if meta:
+        title += "  —  " + "  |  ".join(meta)
+    fig.suptitle(title, fontsize=13)
+
+    for ax, panel_title, headers, rows in (
+        (axes[0], "PER-SCENE SUMMARY", scene_headers, scene_rows),
+        (axes[1], "OVERALL SUMMARY", sum_headers, sum_rows),
+    ):
+        ax.axis("off")
+        ax.set_title(panel_title, fontsize=12, loc="left", pad=10)
+        table = ax.table(
+            cellText=[[fmt(v) for v in row] for row in rows],
+            colLabels=headers,
+            loc="center",
+            cellLoc="center",
+        )
+        table.auto_set_font_size(False)
+        table.set_fontsize(10)
+        table.scale(1, 1.5)
+        for (r, _), cell in table.get_celld().items():
+            if r == 0:
+                cell.set_facecolor("#333333")
+                cell.set_text_props(color="white", fontweight="bold")
+            elif r % 2 == 0:
+                cell.set_facecolor("#f0f0f0")
+
+    Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(filepath, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return filepath
 
 
 def main():
@@ -656,7 +711,6 @@ def main():
     print("=" * 60)
 
     all_metrics = []
-    all_scenes = []
     metrics_by_scene = {}
 
     for scene_name, val_idxs in per_scene_val.items():
@@ -685,7 +739,6 @@ def main():
             metrics = compute_metrics(pred_history[:min_len], gt_history[:min_len])
 
             all_metrics.append(metrics)
-            all_scenes.append(scene_name)
             metrics_by_scene[scene_name].append(metrics)
 
             print(f"IoU={metrics['iou']:.4f}  Dice={metrics['dice']:.4f}  "
@@ -708,23 +761,14 @@ def main():
     print(build_summary_table(all_metrics))
 
     # ─── Save to Disk ─────────────────────────────────────────────────────
-    csv_path = os.path.join(output_dir, "metrics.csv")
-    save_metrics_csv(all_metrics, csv_path, scenes=all_scenes)
-
-    summary_path = os.path.join(output_dir, "summary.txt")
-    with open(summary_path, 'w') as f:
-        f.write(f"Checkpoint: {checkpoint}\n")
-        f.write(f"Epoch: {ckpt_epoch}\n")
-        f.write(f"Samples evaluated: {len(all_metrics)}\n")
-        f.write(f"dt: {dt}, max_t: {max_t}\n\n")
-        f.write("PER-SCENE SUMMARY\n")
-        f.write(build_per_scene_summary_table(metrics_by_scene) + "\n\n")
-        f.write("OVERALL SUMMARY\n")
-        f.write(build_summary_table(all_metrics) + "\n")
+    table_path = save_metrics_table_image(
+        all_metrics, metrics_by_scene,
+        os.path.join(output_dir, "metrics_table.png"),
+        checkpoint=checkpoint, ckpt_epoch=ckpt_epoch, dt=dt, max_t=max_t,
+    )
 
     print(f"\n  Results saved:")
-    print(f"    Metrics CSV:    {csv_path}")
-    print(f"    Summary:        {summary_path}")
+    print(f"    Metrics table:  {table_path}")
     print(f"    Visuals:        {output_dir}/<scene>/")
 
 
