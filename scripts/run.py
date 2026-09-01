@@ -46,8 +46,11 @@ def main():
             ignitions_dir=scene['ignitions'],
         )
         scene_datasets.append(WildfireDataset(loader))
-        # Stable, readable scene name from the landscape filename stem.
-        scene_names.append(Path(scene['landscape']).stem)
+        # Stable, readable scene name from the landscape's parent directory
+        # (e.g. .../landscapes/angeles/angeles.tif -> "angeles"). The parent
+        # disambiguates scenes whose inner .tif shares a name (e.g. two
+        # different "palisades.tif" under classic-palisades/ vs palisades/).
+        scene_names.append(Path(scene['landscape']).parent.name)
 
     dataset = MultiSceneDataset(scene_datasets, scene_names=scene_names)
 

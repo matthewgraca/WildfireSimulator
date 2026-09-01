@@ -65,7 +65,9 @@ def get_test_dataset(config):
             ignitions_dir=scene['ignitions'],
         )
         scene_datasets.append(WildfireDataset(loader))
-        scene_names.append(Path(scene['landscape']).stem)
+        # Scene name from the landscape's parent directory (disambiguates
+        # scenes whose inner .tif shares a name). Must match run.py.
+        scene_names.append(Path(scene['landscape']).parent.name)
 
     dataset = MultiSceneDataset(scene_datasets, scene_names=scene_names)
 
