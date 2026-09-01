@@ -1,6 +1,8 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from scipy.ndimage import distance_transform_edt
 
 
 class HybridLoss(nn.Module):
@@ -93,5 +95,84 @@ class FireSenseNetLoss(nn.Module):
         self.last_bce = (self.bce_weight * bce).item()
         self.last_dice = (self.dice_weight * dice).item()
         self.last_focal = (self.focal_weight * focal).item()
-
         return self.bce_weight * bce + self.dice_weight * dice + self.focal_weight * focal
+
+
+class DistanceMapLoss(nn.Module):
+    """
+    Distance Map Loss for binary segmentation (Caliva et al., MIDL 2019,
+    arXiv:1908.03679).
+
+    A boundary-penalizing cross-entropy: each pixel's negative log-likelihood
+    is weighted by (1 + d(x)), where d(x) is derived from distance transforms
+    of the ground-truth mask (and its complement). Pixels adjacent to the mask
+    boundary are weighted up to 2x, pixels far from the boundary keep weight 1,
+    steering the network's focus toward hard-to-segment boundary regions
+    (here: the fire front).
+
+    Distance map construction, per sample (paper Eq. 2 and Fig. 1):
+      inner = distance_transform_edt(mask)   # dist of interior pixels to the
+                                             # nearest background pixel
+      outer = distance_transform_edt(~mask)  # dist of exterior pixels to the
+                                             # nearest mask pixel
+    Each is inverted so boundary pixels are high and deep interior/exterior
+    pixels are low: w = 1 - dist / dist.max() (0 where the side is empty),
+    then combined:
+      d(x) = w_inner(x) if mask(x) else w_outer(x)      (d in [0, 1])
+
+    Loss:
+      L = mean( (1 + d) * NLL ),  NLL = -y log p - (1 - y) log(1 - p)
+
+    The "+1" floor is the paper's mitigation of the vanishing-gradient issue:
+    every pixel retains at least the plain cross-entropy penalty.
+
+    Degenerate samples (all-background or all-foreground) have no boundary,
+    so no penalty is applied to them (plain cross-entropy instead).
+
+    The map depends only on the target, so it is a constant weight (no grad).
+    It is computed on CPU via scipy at each forward call; the target changes
+    every autoregressive step, so there is no cross-step caching.
+    """
+    def __init__(self):
+        super().__init__()
+        # Expose individual losses for logging (trainer captures last_*)
+        self.last_ce = 0.0
+        self.last_penalty = 0.0
+
+    def forward(self, pred, target):
+        # pred, target: (N, 1, H, W); pred in [0, 1], target binary
+        nll = F.binary_cross_entropy(pred, target, reduction='none')
+        d = self._distance_maps(target)
+        weighted = nll * (1.0 + d)
+        self.last_ce = nll.mean().item()
+        self.last_penalty = (d * nll).mean().item()
+        return weighted.mean()
+
+    def _distance_maps(self, target):
+        t = target.detach().cpu().numpy()
+        if t.ndim == 4:
+            t = t[:, 0]  # (N, 1, H, W) -> (N, H, W)
+        mask = t > 0.5
+        n, h, w = mask.shape
+        maps = np.zeros((n, h, w), dtype=np.float32)
+        for i in range(n):
+            m = mask[i]
+            # No boundary (all-background or all-foreground): the distance
+            # maps are undefined (EDT would measure distances to the array
+            # border), so no penalty is applied to this sample.
+            if not (m.any() and m.size - int(m.sum()) > 0):
+                continue
+            inner = distance_transform_edt(m)
+            outer = distance_transform_edt(~m)
+            w_in = np.zeros_like(inner, dtype=np.float32)
+            w_out = np.zeros_like(outer, dtype=np.float32)
+            # Both maps are non-empty: the guard above guarantees the mask
+            # has interior and exterior pixels, so each EDT has real
+            # reference pixels (inner_max, outer_max > 0).
+            w_in[m] = 1.0 - inner[m] / inner.max()
+            w_out[~m] = 1.0 - outer[~m] / outer.max()
+            maps[i] = w_in + w_out  # disjoint supports, so max == sum
+        return torch.from_numpy(maps).unsqueeze(1).to(
+            device=target.device, dtype=target.dtype
+        )
+
