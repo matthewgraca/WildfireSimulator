@@ -72,12 +72,20 @@ class TrialCollection:
         self.loader = loader
 
         # Load fire trial arrival times from the given directory.
+        # Enumerate ONLY base arrival-time trials. Per-cell wind grids are
+        # stored as sidecar files (<base>_windspeed.tif / <base>_winddir.tif)
+        # next to each trial and are loaded by TrialFileLoader for that trial;
+        # they must not be enumerated as trials themselves.
         self.files = []
         if trials_dir and os.path.isdir(trials_dir):
             for fname in sorted(os.listdir(trials_dir)):
-                if fname.lower().endswith('.tif') or fname.lower().endswith('.tiff'):
-                    fpath = os.path.join(trials_dir, fname)
-                    self.files.append(fpath)
+                lower = fname.lower()
+                if not (lower.endswith('.tif') or lower.endswith('.tiff')):
+                    continue
+                if lower.endswith('_windspeed.tif') or lower.endswith('_winddir.tif'):
+                    continue  # sidecar wind grid, not a trial
+                fpath = os.path.join(trials_dir, fname)
+                self.files.append(fpath)
 
     def __len__(self):
         return len(self.files)

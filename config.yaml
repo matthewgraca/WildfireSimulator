@@ -21,12 +21,12 @@ scheduled_sampling:
 # ignitions. Relative paths are resolved against this config file's directory.
 # A single-scene list reproduces the original stage-1 behavior.
 scenes:
-  - landscape: FlamMapData/classic-palisades/palisades.tif
-    trials: FlamMapData/classic-palisades/Trials/
-    ignitions: FlamMapData/classic-palisades/Ignitions/
-#  - landscape: FlamMapData/angeles/angeles.tif
-#    trials: FlamMapData/angeles/Trials/
-#    ignitions: FlamMapData/angeles/Ignitions/
-#  - landscape: FlamMapData/palisades/palisades.tif
-#    trials: FlamMapData/palisades/Trials/
-#    ignitions: FlamMapData/palisades/Ignitions/
+  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/classic-palisades/palisades.tif
+    trials: /mnt/wildfire/surrogate-model/FlamMapData/classic-palisades/Trials/
+    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/classic-palisades/Ignitions/
+#  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/angeles/angeles.tif
+#    trials: /mnt/wildfire/surrogate-model/FlamMapData/angeles/Trials/
+#    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/angeles/Ignitions/
+#  - landscape: /mnt/wildfire/surrogate-model/FlamMapData/palisades/palisades.tif
+#    trials: /mnt/wildfire/surrogate-model/FlamMapData/palisades/Trials/
+#    ignitions: /mnt/wildfire/surrogate-model/FlamMapData/palisades/Ignitions/
