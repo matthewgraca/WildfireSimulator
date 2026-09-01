@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, random_split, Subset
 from torch.utils.tensorboard import SummaryWriter
 
 from wildfire_simulator.models import MK_UNet_Regression
@@ -38,6 +38,7 @@ def main():
     # Build one WildfireDataset per scene (landscape + trials + ignitions),
     # then concatenate them under a single shared normalization.
     scene_datasets = []
+    scene_names = []
     for scene in config['scenes']:
         loader = WildfireDataLoader(
             TrialCollection(TrialFileLoader(), trials_dir=scene['trials']),
@@ -45,18 +46,19 @@ def main():
             ignitions_dir=scene['ignitions'],
         )
         scene_datasets.append(WildfireDataset(loader))
+        # Stable, readable scene name from the landscape filename stem.
+        scene_names.append(Path(scene['landscape']).stem)
 
-    dataset = MultiSceneDataset(scene_datasets)
+    dataset = MultiSceneDataset(scene_datasets, scene_names=scene_names)
 
-    # Random 80/20 split across all samples from all scenes.
-    train_size = int(0.8 * len(dataset))
-    test_size = len(dataset) - train_size
-    generator = torch.Generator().manual_seed(42)
-    train_set, test_set = random_split(
-        dataset,
-        [train_size, test_size],
-        generator=generator
+    # Stratified per-scene 80/20 split: guarantees every scene (including the
+    # terrain-aware ones) is present in validation, and yields per-scene val
+    # index sets for separate metric tracking.
+    train_indices, val_indices, per_scene_val = dataset.stratified_split(
+        val_frac=0.2, seed=42
     )
+    train_set = Subset(dataset, train_indices)
+    test_set = Subset(dataset, val_indices)
 
     transform = MinMaxPerChannel(dataset.min_val, dataset.max_val)
 
@@ -77,6 +79,23 @@ def main():
         drop_last=False,
         num_workers=4,
     )
+
+    # One validation loader per scene (over that scene's held-out val indices),
+    # so per-scene val_loss is tracked separately during training.
+    val_loaders = {}
+    for scene_name, scene_val_indices in per_scene_val.items():
+        if not scene_val_indices:
+            continue
+        scene_val_set = TransformedDataset(
+            Subset(dataset, scene_val_indices), transform
+        )
+        val_loaders[scene_name] = DataLoader(
+            dataset=scene_val_set,
+            batch_size=16,
+            shuffle=False,
+            drop_last=False,
+            num_workers=4,
+        )
     
     model = MK_UNet_Regression(
         in_channels=config['in_channels'],
@@ -148,6 +167,7 @@ def main():
         loss_fn=DiceLoss(),
         train_loader=train_loader,
         val_loader=val_loader,
+        val_loaders=val_loaders,
         train_batch_processor=train_batch_processor,
         val_batch_processor=val_batch_processor,
         callbacks=[checkpoint_cb, tensorboard_cb],

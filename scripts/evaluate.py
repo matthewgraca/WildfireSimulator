@@ -57,6 +57,7 @@ def get_test_dataset(config):
     evaluated test set matches what training held out.
     """
     scene_datasets = []
+    scene_names = []
     for scene in config['scenes']:
         loader = WildfireDataLoader(
             TrialCollection(TrialFileLoader(), trials_dir=scene['trials']),
@@ -64,16 +65,16 @@ def get_test_dataset(config):
             ignitions_dir=scene['ignitions'],
         )
         scene_datasets.append(WildfireDataset(loader))
+        scene_names.append(Path(scene['landscape']).stem)
 
-    dataset = MultiSceneDataset(scene_datasets)
+    dataset = MultiSceneDataset(scene_datasets, scene_names=scene_names)
 
-    train_size = int(0.8 * len(dataset))
-    test_size = len(dataset) - train_size
-    generator = torch.Generator().manual_seed(42)
-    _, test_set = random_split(dataset, [train_size, test_size], generator=generator)
+    # Same stratified per-scene split as training (deterministic seed), so the
+    # evaluated validation samples match what training held out, per scene.
+    _, _, per_scene_val = dataset.stratified_split(val_frac=0.2, seed=42)
 
     transform = MinMaxPerChannel(dataset.min_val, dataset.max_val)
-    return test_set, transform, dataset
+    return dataset, transform, per_scene_val
 
 
 def run_inference(model, sample, transform, device, dt, max_t):
@@ -495,6 +496,26 @@ def build_summary_table(all_metrics):
     return format_table(headers, rows)
 
 
+def build_per_scene_summary_table(metrics_by_scene):
+    """Build a table comparing key metrics across scenes (one row per scene).
+
+    ``metrics_by_scene`` maps scene name -> list of per-sample metric dicts.
+    This is the table that isolates new-regime (terrain-aware) performance.
+    """
+    headers = ["Scene", "N", "IoU", "Dice", "Precision", "Recall", "MAE Arrival"]
+    keys = ['iou', 'dice', 'precision', 'recall', 'mae_arrival']
+    rows = []
+    for scene_name, metrics in metrics_by_scene.items():
+        if not metrics:
+            rows.append([scene_name, 0, *(float('nan') for _ in keys)])
+            continue
+        row = [scene_name, len(metrics)]
+        for key in keys:
+            row.append(float(np.mean([m[key] for m in metrics])))
+        rows.append(row)
+    return format_table(headers, rows)
+
+
 def build_training_table(train_data, val_data):
     """Build a table summarizing training curve stats."""
     train_steps, train_values = train_data
@@ -512,15 +533,16 @@ def build_training_table(train_data, val_data):
     return format_table(headers, rows)
 
 
-def save_metrics_csv(all_metrics, filepath):
-    """Save per-sample metrics as CSV."""
+def save_metrics_csv(all_metrics, filepath, scenes=None):
+    """Save per-sample metrics as CSV, optionally tagged by scene."""
     keys = ['mse_arrival', 'mae_arrival',
             'iou', 'dice', 'precision', 'recall']
     with open(filepath, 'w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(['sample'] + keys)
+        writer.writerow(['sample', 'scene'] + keys)
         for i, m in enumerate(all_metrics):
-            writer.writerow([i] + [m[k] for k in keys])
+            scene = scenes[i] if scenes is not None else ""
+            writer.writerow([i, scene] + [m[k] for k in keys])
 
 
 def main():
@@ -586,9 +608,10 @@ def main():
 
     # ─── Load Data ────────────────────────────────────────────────────────
     print("\nLoading dataset...")
-    test_set, transform, full_dataset = get_test_dataset(config)
+    full_dataset, transform, per_scene_val = get_test_dataset(config)
     print(f"  Dataset size:  {len(full_dataset)}")
-    print(f"  Test split:    {len(test_set)}")
+    for scene_name, idxs in per_scene_val.items():
+        print(f"  Val[{scene_name}]: {len(idxs)}")
 
     # ─── Training Curves ──────────────────────────────────────────────────
     print("\n" + "=" * 60)
@@ -602,71 +625,82 @@ def main():
     else:
         print("  No training logs found.")
 
-    # ─── Inference & Metrics ──────────────────────────────────────────────
-    num_samples = min(args.num_samples, len(test_set))
+    # ─── Inference & Metrics (per scene) ──────────────────────────────────
     print("\n" + "=" * 60)
-    print(f" INFERENCE ({num_samples} test samples)")
+    print(f" INFERENCE (up to {args.num_samples} val samples per scene)")
     print("=" * 60)
-
-    # Create subfolders for visualizations
-    mask_dir = os.path.join(output_dir, "mask")
-    fat_dir = os.path.join(output_dir, "fat")
-    input_dir = os.path.join(output_dir, "input_channels")
 
     all_metrics = []
-    for i in range(num_samples):
-        sample = test_set[i]
-        print(f"  [{i + 1:3d}/{num_samples}] Running rollout...", end=" ", flush=True)
+    all_scenes = []
+    metrics_by_scene = {}
 
-        pred_history, gt_history, times = run_inference(
-            model, sample, transform, device, dt, max_t
-        )
+    for scene_name, val_idxs in per_scene_val.items():
+        n_scene = min(args.num_samples, len(val_idxs))
+        metrics_by_scene[scene_name] = []
+        if n_scene == 0:
+            print(f"\n  Scene '{scene_name}': no validation samples, skipping.")
+            continue
+        print(f"\n  Scene '{scene_name}' ({n_scene} samples):")
 
-        # Align lengths
-        min_len = min(len(pred_history), len(gt_history))
-        metrics = compute_metrics(pred_history[:min_len], gt_history[:min_len])
-        all_metrics.append(metrics)
+        # Per-scene visualization subfolders keep outputs organized.
+        mask_dir = os.path.join(output_dir, scene_name, "mask")
+        fat_dir = os.path.join(output_dir, scene_name, "fat")
+        input_dir = os.path.join(output_dir, scene_name, "input_channels")
 
-        print(f"IoU={metrics['iou']:.4f}  Dice={metrics['dice']:.4f}  "
-              f"MAE_arr={metrics['mae_arrival']:.4f}")
+        for j in range(n_scene):
+            global_idx = val_idxs[j]
+            sample = full_dataset[global_idx]  # raw; run_inference transforms internally
+            print(f"    [{j + 1:3d}/{n_scene}] Running rollout...", end=" ", flush=True)
 
-        # Save visuals into organized subfolders
-        save_arrival_comparison(pred_history, gt_history, i, mask_dir)
-        save_final_arrival_map(pred_history, gt_history, i, fat_dir)
-        save_input_channels(sample, i, input_dir)
+            pred_history, gt_history, times = run_inference(
+                model, sample, transform, device, dt, max_t
+            )
 
+            min_len = min(len(pred_history), len(gt_history))
+            metrics = compute_metrics(pred_history[:min_len], gt_history[:min_len])
 
-    # ─── Per-Sample Table ─────────────────────────────────────────────────
+            all_metrics.append(metrics)
+            all_scenes.append(scene_name)
+            metrics_by_scene[scene_name].append(metrics)
+
+            print(f"IoU={metrics['iou']:.4f}  Dice={metrics['dice']:.4f}  "
+                  f"MAE_arr={metrics['mae_arrival']:.4f}")
+
+            save_arrival_comparison(pred_history, gt_history, j, mask_dir)
+            save_final_arrival_map(pred_history, gt_history, j, fat_dir)
+            save_input_channels(sample, j, input_dir)
+
+    # ─── Per-Scene Summary (the new-regime signal) ────────────────────────
     print("\n" + "=" * 60)
-    print(" PER-SAMPLE METRICS")
+    print(" PER-SCENE SUMMARY")
     print("=" * 60)
-    print(build_per_sample_table(all_metrics))
+    print(build_per_scene_summary_table(metrics_by_scene))
 
-    # ─── Summary Table ────────────────────────────────────────────────────
+    # ─── Overall Summary Table ────────────────────────────────────────────
     print("\n" + "=" * 60)
-    print(" SUMMARY (across all samples)")
+    print(" SUMMARY (across all evaluated samples)")
     print("=" * 60)
     print(build_summary_table(all_metrics))
 
     # ─── Save to Disk ─────────────────────────────────────────────────────
     csv_path = os.path.join(output_dir, "metrics.csv")
-    save_metrics_csv(all_metrics, csv_path)
+    save_metrics_csv(all_metrics, csv_path, scenes=all_scenes)
 
     summary_path = os.path.join(output_dir, "summary.txt")
     with open(summary_path, 'w') as f:
         f.write(f"Checkpoint: {checkpoint}\n")
         f.write(f"Epoch: {ckpt_epoch}\n")
-        f.write(f"Samples evaluated: {num_samples}\n")
+        f.write(f"Samples evaluated: {len(all_metrics)}\n")
         f.write(f"dt: {dt}, max_t: {max_t}\n\n")
-        f.write("SUMMARY\n")
-        f.write(build_summary_table(all_metrics) + "\n\n")
-        f.write("PER-SAMPLE\n")
-        f.write(build_per_sample_table(all_metrics) + "\n")
+        f.write("PER-SCENE SUMMARY\n")
+        f.write(build_per_scene_summary_table(metrics_by_scene) + "\n\n")
+        f.write("OVERALL SUMMARY\n")
+        f.write(build_summary_table(all_metrics) + "\n")
 
     print(f"\n  Results saved:")
     print(f"    Metrics CSV:    {csv_path}")
     print(f"    Summary:        {summary_path}")
-    print(f"    Visuals:        {output_dir}/")
+    print(f"    Visuals:        {output_dir}/<scene>/")
 
 
 if __name__ == "__main__":

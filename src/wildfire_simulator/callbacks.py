@@ -39,6 +39,13 @@ class TensorBoardCallback:
         self.train_writer.add_scalar("Loss", metrics['train_loss'], epoch)
         self.val_writer.add_scalar("Loss", metrics['val_loss'], epoch)
 
+        # Per-scene validation losses (keys like 'val_loss/<scene>'), so the
+        # new-regime (terrain-aware) scenes are tracked separately.
+        for key, value in metrics.items():
+            if key.startswith('val_loss/'):
+                scene = key.split('/', 1)[1]
+                self.val_writer.add_scalar(f"Loss/scene/{scene}", value, epoch)
+
         # Log per-component losses if available
         for key in ['bce', 'dice', 'focal', 'mask_loss', 'arrival_loss']:
             train_key = f'train_{key}'

@@ -217,3 +217,57 @@ def test_trainer(dataloader):
     assert len(set(s.step for s in val_acc.Scalars("Loss"))) == 10
 
 
+
+
+def test_per_scene_val_metrics(dataloader):
+    torch.manual_seed(0)
+
+    dataset = WildfireDataset(dataloader)
+    transform = MinMaxPerChannel(dataset.min_val, dataset.max_val)
+    tds = TransformedDataset(dataset, transform)
+
+    burner = ForwardBurnProcess()
+    train_bp = BurnerBatchProcessor(
+        burner=burner, dt=1/48, eval=False,
+        sampler=ScheduledSampler(k=0.1, t0=40), rng=ScalarRNG(),
+    )
+    val_bp = BurnerBatchProcessor(burner=burner, dt=1/48, eval=True)
+
+    loader = DataLoader(tds, batch_size=1, shuffle=False, num_workers=0)
+
+    model = MK_UNet_Regression(
+        in_channels=14, out_channels=1,
+        channels=[8, 16, 16, 16, 16], final_activation='sigmoid',
+    )
+
+    # Spy callback captures the metrics dict emitted at validation end.
+    class SpyCallback:
+        def __init__(self):
+            self.metrics = None
+        def on_validation_end(self, epoch, metrics, model, optimizer):
+            self.metrics = metrics
+
+    spy = SpyCallback()
+
+    trainer = ForwardBurnTrainer(
+        model=model,
+        optimizer=torch.optim.AdamW(model.parameters(), 5e-4),
+        loss_fn=nn.BCELoss(),
+        train_loader=loader,
+        val_loader=loader,
+        val_loaders={"old": loader, "new": loader},
+        train_batch_processor=train_bp,
+        val_batch_processor=val_bp,
+        callbacks=[spy],
+        epochs=1,
+        max_t=2/48,
+    )
+
+    trainer.fit()
+
+    # Combined and both per-scene val losses are present and finite.
+    assert 'val_loss' in spy.metrics
+    assert 'val_loss/old' in spy.metrics
+    assert 'val_loss/new' in spy.metrics
+    assert isinstance(spy.metrics['val_loss/old'], float)
+    assert isinstance(spy.metrics['val_loss/new'], float)

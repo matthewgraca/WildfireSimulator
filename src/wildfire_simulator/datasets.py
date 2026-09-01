@@ -115,10 +115,21 @@ class MultiSceneDataset(Dataset):
     returning a ``(13, 500, 500)`` tensor, and ``min_val`` / ``max_val``.
     """
 
-    def __init__(self, scene_datasets):
+    def __init__(self, scene_datasets, scene_names=None):
         if not scene_datasets:
             raise ValueError("MultiSceneDataset requires at least one scene.")
         self.scenes = list(scene_datasets)
+
+        # Stable, human-readable name per scene for metric labels. Defaults to
+        # scene_0, scene_1, ... when not provided.
+        if scene_names is None:
+            scene_names = [f"scene_{i}" for i in range(len(self.scenes))]
+        if len(scene_names) != len(self.scenes):
+            raise ValueError(
+                f"scene_names length ({len(scene_names)}) must match number of "
+                f"scenes ({len(self.scenes)})."
+            )
+        self.scene_names = list(scene_names)
 
         # Flat global index -> (scene_id, local_idx). Iteration order is stable
         # (scene 0 first, then scene 1, ...), which the leave-scene-out helper
@@ -155,6 +166,48 @@ class MultiSceneDataset(Dataset):
 
     def num_scenes(self):
         return len(self.scenes)
+
+    def scene_name(self, scene_id):
+        return self.scene_names[scene_id]
+
+    def stratified_split(self, val_frac=0.2, seed=42):
+        """Split *within each scene* so every scene is represented in both
+        train and validation in known proportion.
+
+        Returns:
+            train_indices: list[int] of global indices for training.
+            val_indices:   list[int] of global indices for validation
+                           (concatenation of all per-scene val indices).
+            per_scene_val: dict[str, list[int]] mapping scene name -> the global
+                           validation indices belonging to that scene, so
+                           validation performance can be measured per scene.
+
+        Deterministic given ``seed``. Uses a torch generator so shuffling
+        matches the rest of the pipeline's RNG conventions.
+        """
+        import torch
+
+        train_indices = []
+        val_indices = []
+        per_scene_val = {}
+
+        for scene_id in range(len(self.scenes)):
+            g_idx = self.scene_indices(scene_id)
+            n = len(g_idx)
+            # Deterministic per-scene permutation (offset seed by scene so
+            # scenes don't share the same ordering).
+            gen = torch.Generator().manual_seed(seed + scene_id)
+            perm = torch.randperm(n, generator=gen).tolist()
+            n_val = int(round(val_frac * n))
+            val_local = perm[:n_val]
+            train_local = perm[n_val:]
+
+            scene_val = [g_idx[i] for i in val_local]
+            train_indices.extend(g_idx[i] for i in train_local)
+            val_indices.extend(scene_val)
+            per_scene_val[self.scene_names[scene_id]] = scene_val
+
+        return train_indices, val_indices, per_scene_val
 
 
 class TransformedDataset:

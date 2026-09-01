@@ -108,12 +108,17 @@ class ForwardBurnTrainer:
         epochs=1,
         max_t=1,
         device=None,
+        val_loaders=None,
     ):
         self.model = model
         self.optimizer = optimizer
         self.loss_fn = loss_fn
         self.train_loader = train_loader
         self.val_loader = val_loader
+        # Optional per-scene validation loaders: {scene_name: DataLoader}.
+        # When provided, per-scene val_loss is computed and reported alongside
+        # the combined val_loss so new-regime performance is visible separately.
+        self.val_loaders = val_loaders or {}
         self.train_batch_processor = train_batch_processor
         self.val_batch_processor = val_batch_processor
         self.callbacks = callbacks or []
@@ -180,12 +185,13 @@ class ForwardBurnTrainer:
 
         return total_loss / n_samples
 
-    def _validate(self, epoch, total_epochs):
+    def _validate(self, epoch, total_epochs, loader=None, desc="Validating"):
+        loader = loader if loader is not None else self.val_loader
         self.model.eval()
         total_loss = 0.0
-        n_samples = len(self.val_loader.dataset)
+        n_samples = len(loader.dataset)
 
-        pbar = tqdm(self.val_loader, desc="Validating")
+        pbar = tqdm(loader, desc=desc)
         samples_seen = 0
         with torch.no_grad():
             for batch_idx, batch in enumerate(pbar):
@@ -253,6 +259,17 @@ class ForwardBurnTrainer:
             val_loss = self._validate(epoch, total_epochs)
             metrics = {'train_loss': train_loss, 'val_loss': val_loss}
             metrics.update(train_components)
+
+            # Per-scene validation loss (guarantees new-regime performance is
+            # measured separately, not blended into the combined val_loss).
+            for scene_name, scene_loader in self.val_loaders.items():
+                if len(scene_loader.dataset) == 0:
+                    continue
+                scene_val = self._validate(
+                    epoch, total_epochs, loader=scene_loader,
+                    desc=f"Val[{scene_name}]",
+                )
+                metrics[f'val_loss/{scene_name}'] = scene_val
 
             # Capture per-component losses from validation (last batch)
             for attr in ['last_bce', 'last_dice', 'last_focal', 'last_mask_loss', 'last_arrival_loss']:
