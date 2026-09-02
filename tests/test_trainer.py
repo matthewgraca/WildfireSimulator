@@ -9,7 +9,7 @@ import shutil
 import re
 import numpy as np
 
-from wildfire_simulator.callbacks import ModelCheckpoint, TensorBoardCallback
+from wildfire_simulator.callbacks import ModelCheckpoint, TensorBoardCallback, EarlyStopping
 from wildfire_simulator.datasets import WildfireDataset, TransformedDataset
 from wildfire_simulator.transforms import MinMaxPerChannel
 from wildfire_simulator.forward_burn_process import ForwardBurnProcess
@@ -271,3 +271,81 @@ def test_per_scene_val_metrics(dataloader):
     assert 'val_loss/new' in spy.metrics
     assert isinstance(spy.metrics['val_loss/old'], float)
     assert isinstance(spy.metrics['val_loss/new'], float)
+
+
+def test_early_stopping_stops_after_patience_stalls():
+    # min mode: an improvement is a strictly lower val_loss.
+    cb = EarlyStopping(monitor='val_loss', mode='min', patience=3)
+
+    # The first epoch always counts as an improvement.
+    assert cb.on_validation_end(0, {'val_loss': 1.0}, None, None) is False
+    assert cb.on_validation_end(1, {'val_loss': 0.9}, None, None) is False  # improvement
+    assert cb.on_validation_end(2, {'val_loss': 0.8}, None, None) is False  # improvement
+    # Three consecutive stalls -> stop on the third.
+    assert cb.on_validation_end(3, {'val_loss': 0.85}, None, None) is False  # stall 1
+    assert cb.on_validation_end(4, {'val_loss': 0.9}, None, None) is False   # stall 2
+    assert cb.on_validation_end(5, {'val_loss': 0.95}, None, None) is True   # stall 3 -> stop
+
+
+def test_early_stopping_resets_counter_on_improvement():
+    cb = EarlyStopping(monitor='val_loss', mode='min', patience=2)
+    assert cb.on_validation_end(0, {'val_loss': 1.0}, None, None) is False  # improvement (best None)
+    assert cb.on_validation_end(1, {'val_loss': 1.1}, None, None) is False  # stall 1
+    # A new best resets the consecutive-stall counter.
+    assert cb.on_validation_end(2, {'val_loss': 0.5}, None, None) is False  # improvement
+    assert cb.on_validation_end(3, {'val_loss': 0.6}, None, None) is False  # stall 1
+    assert cb.on_validation_end(4, {'val_loss': 0.7}, None, None) is True   # stall 2 -> stop
+
+
+def test_early_stopping_max_mode():
+    cb = EarlyStopping(monitor='accuracy', mode='max', patience=1)
+    assert cb.on_validation_end(0, {'accuracy': 0.5}, None, None) is False  # improvement
+    assert cb.on_validation_end(1, {'accuracy': 0.4}, None, None) is True   # 1 stall -> stop
+
+
+def test_trainer_stops_early(dataloader):
+    # fit() must break when a callback's on_validation_end returns truthy,
+    # rather than running the full epoch budget.
+    torch.manual_seed(0)
+    dataset = WildfireDataset(dataloader)
+    transform = MinMaxPerChannel(dataset.min_val, dataset.max_val)
+    tds = TransformedDataset(dataset, transform)
+    burner = ForwardBurnProcess()
+    train_bp = BurnerBatchProcessor(
+        burner=burner, dt=1/48, eval=False,
+        sampler=ScheduledSampler(k=0.1, t0=40), rng=ScalarRNG(),
+    )
+    val_bp = BurnerBatchProcessor(burner=burner, dt=1/48, eval=True)
+    loader = DataLoader(tds, batch_size=1, shuffle=False, num_workers=0)
+    model = MK_UNet_Regression(
+        in_channels=14, out_channels=1,
+        channels=[8, 16, 16, 16, 16], final_activation='sigmoid',
+    )
+
+    class StopAfterNCalls:
+        def __init__(self, n):
+            self.n = n
+            self.calls = 0
+        def on_validation_end(self, epoch, metrics, model, optimizer):
+            self.calls += 1
+            return self.calls >= self.n
+
+    stopper = StopAfterNCalls(n=2)
+    trainer = ForwardBurnTrainer(
+        model=model,
+        optimizer=torch.optim.AdamW(model.parameters(), 5e-4),
+        loss_fn=nn.BCELoss(),
+        train_loader=loader,
+        val_loader=loader,
+        train_batch_processor=train_bp,
+        val_batch_processor=val_bp,
+        callbacks=[stopper],
+        epochs=5,
+        max_t=2/48,
+    )
+
+    trainer.fit()
+
+    # fit() honored the stop signal: only 2 epochs ran despite epochs=5.
+    assert stopper.calls == 2
+    assert trainer.current_epoch == 2

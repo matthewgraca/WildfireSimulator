@@ -12,7 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from wildfire_simulator.models import MK_UNet_Regression
 from wildfire_simulator.checkpoints import init_from_checkpoint
-from wildfire_simulator.callbacks import ModelCheckpoint, TensorBoardCallback
+from wildfire_simulator.callbacks import ModelCheckpoint, TensorBoardCallback, EarlyStopping
 from wildfire_simulator.forward_burn_process import ForwardBurnProcess
 from wildfire_simulator.trainers import ForwardBurnTrainer, BurnerBatchProcessor
 from wildfire_simulator.datasets import build_multiscene_dataset, TransformedDataset
@@ -114,6 +114,12 @@ def main():
         filepath=os.path.join(output_dir, 'checkpoints/best-model-{epoch:02d}-{val_loss:.2f}.pt')
     )
 
+    early_stop_cb = EarlyStopping(
+        monitor='val_loss',
+        mode='min',
+        patience=20
+    )
+
     train_writer = SummaryWriter(os.path.join(output_dir, "training/train"))
     val_writer = SummaryWriter(os.path.join(output_dir, "training/val"))
 
@@ -167,7 +173,7 @@ def main():
         val_loaders=val_loaders,
         train_batch_processor=train_batch_processor,
         val_batch_processor=val_batch_processor,
-        callbacks=[checkpoint_cb, tensorboard_cb],
+        callbacks=[checkpoint_cb, early_stop_cb, tensorboard_cb],
         epochs=100,
         max_t=config['max_t'],
         device=device,

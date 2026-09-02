@@ -30,6 +30,42 @@ class ModelCheckpoint:
             }
             torch.save(checkpoint, path)
 
+class EarlyStopping:
+    """Stop training once the monitored metric stops improving.
+
+    Mirrors ``ModelCheckpoint``'s monitor/mode semantics so "improvement" is
+    defined identically to when a checkpoint is saved: the first epoch always
+    counts as an improvement, and each later epoch that does not beat the best
+    value seen so far advances a consecutive-stall counter. Once that counter
+    reaches ``patience``, the callback signals that training should stop.
+    """
+
+    def __init__(self, monitor, mode, patience):
+        self.monitor = monitor
+        self.mode = mode
+        self.patience = patience
+        self.best_metric = None
+        self.epochs_since_improvement = 0
+
+        if self.mode == 'min':
+            self.compare = lambda current, best: current < best
+        elif self.mode == 'max':
+            self.compare = lambda current, best: current > best
+        else:
+            raise ValueError(f"Unsupported mode: {self.mode}")
+
+    def on_validation_end(self, epoch, metrics, model, optimizer):
+        """Return True when ``patience`` stalled epochs have elapsed."""
+        current = metrics.get(self.monitor)
+        if current is None:
+            return False
+        if self.best_metric is None or self.compare(current, self.best_metric):
+            self.best_metric = current
+            self.epochs_since_improvement = 0
+        else:
+            self.epochs_since_improvement += 1
+        return self.epochs_since_improvement >= self.patience
+
 class TensorBoardCallback:
     def __init__(self, train_writer, val_writer):
         self.train_writer = train_writer

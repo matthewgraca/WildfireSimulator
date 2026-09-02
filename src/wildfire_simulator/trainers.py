@@ -278,9 +278,13 @@ class ForwardBurnTrainer:
                     key = attr.replace('last_', '')
                     metrics[f'val_{key}'] = val
 
+            stop = False
             for cb in self.callbacks:
-                cb.on_validation_end(epoch=epoch, metrics=metrics, model=self.model, optimizer=self.optimizer)
+                if cb.on_validation_end(epoch=epoch, metrics=metrics, model=self.model, optimizer=self.optimizer):
+                    stop = True
             self.current_epoch += 1
+            if stop:
+                break
 
     def evaluate(self):
         val_loss = self._validate(epoch=0, total_epochs=1)
