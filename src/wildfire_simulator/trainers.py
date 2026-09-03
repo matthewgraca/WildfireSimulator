@@ -109,6 +109,9 @@ class ForwardBurnTrainer:
         max_t=1,
         device=None,
         val_loaders=None,
+        viz_every=0,
+        viz_record_indices=None,
+        val_transform=None,
     ):
         self.model = model
         self.optimizer = optimizer
@@ -119,6 +122,14 @@ class ForwardBurnTrainer:
         # When provided, per-scene val_loss is computed and reported alongside
         # the combined val_loss so new-regime performance is visible separately.
         self.val_loaders = val_loaders or {}
+        # TensorBoard image viz: every ``viz_every`` epochs (0 disables),
+        # record full rollouts for the fixed per-scene sample subsets in
+        # ``viz_record_indices`` ({scene: [loader positions]}).
+        # ``val_transform`` inverse-normalizes recorded inputs so the static
+        # channel panels show raw units.
+        self.viz_every = viz_every or 0
+        self.viz_record_indices = viz_record_indices or {}
+        self.val_transform = val_transform
         self.train_batch_processor = train_batch_processor
         self.val_batch_processor = val_batch_processor
         self.callbacks = callbacks or []
@@ -185,14 +196,27 @@ class ForwardBurnTrainer:
 
         return total_loss / n_samples
 
-    def _validate(self, epoch, total_epochs, loader=None, desc="Validating"):
+    def _validate(self, epoch, total_epochs, loader=None, desc="Validating",
+                  record_indices=None):
+        """Run one validation pass (autoregressive rollout over the loader).
+
+        Returns:
+            (val_loss, final_mask_iou, viz_records). ``viz_records`` is a
+            ``{position: record}`` dict when ``record_indices`` is given,
+            else None. Each record holds the true sample and the predicted /
+            ground-truth (mask, FAT) frame history for one validation sample.
+        """
         loader = loader if loader is not None else self.val_loader
         self.model.eval()
         total_loss = 0.0
+        iou_sum = 0.0
         n_samples = len(loader.dataset)
+        record_set = set(record_indices) if record_indices else None
 
         pbar = tqdm(loader, desc=desc)
         samples_seen = 0
+        position = 0
+        recorded = {} if record_set is not None else None
         with torch.no_grad():
             for batch_idx, batch in enumerate(pbar):
                 preds_padded = None
@@ -200,6 +224,27 @@ class ForwardBurnTrainer:
                 dt = self.val_batch_processor.dt
                 num_steps = len(np.arange(dt, self.max_t, dt))
                 batch_loss = 0.0
+
+                # True state on device, for final-mask IoU and viz
+                # recording (the batch processor moves its own copies).
+                true_mask = batch[:, 0:1].to(self.device)
+                true_fat = batch[:, 1:2].to(self.device)
+
+                N = batch.size(0)
+                H, W = batch.shape[-2], batch.shape[-1]
+
+                local_rec = None
+                if record_set is not None:
+                    local_rec = [i for i in range(N) if position + i in record_set]
+                    if local_rec:
+                        for i in local_rec:
+                            recorded[position + i] = {
+                                'true': batch[i],
+                                'pred_history': [],
+                                'gt_history': [],
+                            }
+                    else:
+                        local_rec = None
 
                 for t in np.arange(dt, self.max_t, dt):
                     if preds_padded is None:
@@ -237,11 +282,58 @@ class ForwardBurnTrainer:
                     newly_burned = (pred_mask == 1) & (preds_padded[:, 1:2, :, :] == 0)
                     preds_padded[:, 1:2, :, :][newly_burned] = t + dt
 
+                    # Record (mask, FAT) state at t + dt for the tracked
+                    # samples: predicted state, plus the ground-truth burn
+                    # of the original FAT at the same time.
+                    if local_rec:
+                        tau = t + dt
+                        for i in local_rec:
+                            rec = recorded[position + i]
+                            rec['pred_history'].append(
+                                preds_padded[i, :2, :H, :W].detach().cpu()
+                            )
+                            gt_mask = true_mask[i].clone()
+                            gt_fat = true_fat[i].clone()
+                            not_burnt = gt_fat > tau
+                            gt_mask[not_burnt] = 0.0
+                            gt_fat[not_burnt] = 0.0
+                            rec['gt_history'].append(
+                                torch.cat([gt_mask, gt_fat], dim=0).cpu()
+                            )
+
+                # Final-mask IoU over the whole batch: predicted rollout
+                # state vs the original mask (GT at t = max_t; mirrors the
+                # batch processor's burn, which zeroes the mask where
+                # FAT > t).
+                gt_final_mask = true_mask.where(true_fat > self.max_t, 0.0)
+                pred_final = preds_padded[:, 0:1, :H, :W]
+                intersection = (pred_final * gt_final_mask).sum()
+                union = ((pred_final + gt_final_mask) > 0).sum()
+                iou_sum += (intersection / (union + 1e-8)).item() * N
+
                 total_loss += (batch_loss / num_steps) * batch.size(0)
                 samples_seen += batch.size(0)
                 pbar.set_postfix(val_loss=f"{total_loss / samples_seen:.4f}")
 
-        return total_loss / n_samples
+        return total_loss / n_samples, iou_sum / n_samples, recorded
+
+    def _finalize_viz_record(self, position, record):
+        """Turn a raw recorded sample into a renderable payload.
+
+        Inverse-normalizes the true sample so the static channel panel shows
+        raw units (no-op when no transform was provided).
+        """
+        true = record['true']
+        input_sample = (
+            self.val_transform.inverse(true)
+            if self.val_transform is not None else true
+        )
+        return {
+            'idx': position,
+            'input': input_sample,
+            'pred_history': record['pred_history'],
+            'gt_history': record['gt_history'],
+        }
 
     def fit(self):
         total_epochs = self.epochs
@@ -256,8 +348,12 @@ class ForwardBurnTrainer:
                     key = attr.replace('last_', '')
                     train_components[f'train_{key}'] = val
 
-            val_loss = self._validate(epoch, total_epochs)
-            metrics = {'train_loss': train_loss, 'val_loss': val_loss}
+            val_loss, val_iou, _ = self._validate(epoch, total_epochs)
+            metrics = {
+                'train_loss': train_loss,
+                'val_loss': val_loss,
+                'val_iou': val_iou,
+            }
             metrics.update(train_components)
 
             # Per-scene validation loss (guarantees new-regime performance is
@@ -265,11 +361,26 @@ class ForwardBurnTrainer:
             for scene_name, scene_loader in self.val_loaders.items():
                 if len(scene_loader.dataset) == 0:
                     continue
-                scene_val = self._validate(
+                do_record = (
+                    self.viz_every > 0
+                    and epoch % self.viz_every == 0
+                    and scene_name in self.viz_record_indices
+                )
+                scene_val, scene_iou, records = self._validate(
                     epoch, total_epochs, loader=scene_loader,
                     desc=f"Val[{scene_name}]",
+                    record_indices=(
+                        self.viz_record_indices.get(scene_name) if do_record else None
+                    ),
                 )
                 metrics[f'val_loss/{scene_name}'] = scene_val
+                metrics[f'val_iou/{scene_name}'] = scene_iou
+                if records:
+                    viz = metrics.setdefault('viz', {})
+                    viz[scene_name] = [
+                        self._finalize_viz_record(position, record)
+                        for position, record in sorted(records.items())
+                    ]
 
             # Capture per-component losses from validation (last batch)
             for attr in ['last_bce', 'last_dice', 'last_focal', 'last_mask_loss', 'last_arrival_loss', 'last_ce', 'last_penalty']:
@@ -287,5 +398,5 @@ class ForwardBurnTrainer:
                 break
 
     def evaluate(self):
-        val_loss = self._validate(epoch=0, total_epochs=1)
-        return {'val_loss': val_loss}
+        val_loss, val_iou, _ = self._validate(epoch=0, total_epochs=1)
+        return {'val_loss': val_loss, 'val_iou': val_iou}

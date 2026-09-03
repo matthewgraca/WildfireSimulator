@@ -135,7 +135,9 @@ def plot_static_channels(sample, output_path):
     # Channel mapping:
     # 2: Elevation, 3: Slope, 4: Aspect, 5: Fuel model (FBFM40)
     # 6: Canopy cover, 7: Stand height, 8: Canopy base height, 9: Canopy bulk density
-    # 10: Wind speed (scalar), 11: Wind direction (scalar), 12: Foliar moisture (scalar)
+    # 10: Wind U, 11: Wind V (per-cell fields when the trial has terrain-aware
+    # WindNinja sidecar grids; uniform broadcasts for v1 scalar-wind trials),
+    # 12: Foliar moisture (scalar)
 
     channel_info = [
         (2, "Elevation", "terrain", "m"),
@@ -166,27 +168,39 @@ def plot_static_channels(sample, output_path):
             cbar.set_label(unit, fontsize=8)
 
     # Wind quiver plot (panel at row 1, col 3)
+    # Channels 10/11 are U/V. For v2 trials these are per-cell terrain-aware
+    # fields (WindNinja sidecar grids); for v1 they are uniform broadcasts,
+    # so a coarse grid of identical arrows suffices.
     ax_wind = axes[1, 3]
-    wind_u = sample[10, 0, 0].item()  # U component (east-west)
-    wind_v = sample[11, 0, 0].item()  # V component (north-south)
+    wind_u = sample[10].numpy()
+    wind_v = sample[11].numpy()
+    terrain_aware = float(np.ptp(wind_u)) > 0.0 or float(np.ptp(wind_v)) > 0.0
     wind_speed = np.sqrt(wind_u**2 + wind_v**2)
-    wind_dir = (np.degrees(np.arctan2(-wind_u, -wind_v)) + 360) % 360
+    mean_speed = float(wind_speed.mean())
+    mean_dir = (np.degrees(np.arctan2(-float(wind_u.mean()), -float(wind_v.mean()))) + 360) % 360
 
-    # Create a grid of arrows showing uniform wind field
-    grid_size = 10
-    x = np.linspace(0, 500, grid_size)
-    y = np.linspace(0, 500, grid_size)
-    X, Y = np.meshgrid(x, y)
-    # U/V are in cartesian (U=east, V=north)
-    # set_ylim(500, 0) handles the y-axis flip for image coords
-    U = np.full_like(X, wind_u)
-    V = np.full_like(Y, wind_v)
+    if terrain_aware:
+        # Subsample the actual per-cell field so the quiver stays readable.
+        step = 25
+        X, Y = np.meshgrid(np.arange(0, 500, step), np.arange(0, 500, step))
+        U = wind_u[::step, ::step]
+        V = wind_v[::step, ::step]
+    else:
+        grid_size = 10
+        x = np.linspace(0, 500, grid_size)
+        y = np.linspace(0, 500, grid_size)
+        X, Y = np.meshgrid(x, y)
+        U = np.full_like(X, float(wind_u[0, 0]))
+        V = np.full_like(Y, float(wind_v[0, 0]))
 
-    ax_wind.quiver(X, Y, U, V, scale=wind_speed * 15, color='navy', alpha=0.7)
+    ax_wind.quiver(X, Y, U, V, scale=max(mean_speed, 1e-6) * 15, color='navy', alpha=0.7)
     ax_wind.set_xlim(0, 500)
     ax_wind.set_ylim(500, 0)  # flip y to match image coordinates
     ax_wind.set_aspect('equal')
-    ax_wind.set_title(f"Wind\n{wind_speed:.0f} units @ {wind_dir:.0f}°", fontsize=10)
+    if terrain_aware:
+        ax_wind.set_title(f"Wind (terrain-aware)\n{mean_speed:.0f} avg units @ {mean_dir:.0f}°", fontsize=10)
+    else:
+        ax_wind.set_title(f"Wind\n{mean_speed:.0f} units @ {mean_dir:.0f}°", fontsize=10)
     ax_wind.axis('off')
 
     # Foliar moisture (panel at row 1, col 4)

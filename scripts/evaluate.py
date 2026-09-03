@@ -22,6 +22,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
+from PIL import Image
 
 from wildfire_simulator.models import MK_UNet_Regression
 from wildfire_simulator.forward_burn_process import ForwardBurnProcess
@@ -29,6 +30,7 @@ from wildfire_simulator.simulators import ForwardBurnSimulator, fire_burn_step
 from wildfire_simulator.datasets import build_multiscene_dataset
 from wildfire_simulator.transforms import MinMaxPerChannel
 from wildfire_simulator.config import load_config
+from wildfire_simulator import viz
 
 
 def load_model(checkpoint_path, device, in_channels=14):
@@ -151,155 +153,32 @@ def compute_metrics(pred_frames, gt_frames):
     return {k: float(np.mean(v)) for k, v in metrics.items()}
 
 
+def _save_figure(arr, filepath):
+    """Save a uint8 RGB array as a PNG, creating parent directories as needed."""
+    Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(arr).save(filepath)
+    return filepath
+
+
 def save_input_channels(sample, sample_idx, output_dir):
     """Save visualization of static input channels (landscape features) for a sample."""
-    # Channel mapping (skip 0=mask, 1=FAT):
-    # 2: Elevation, 3: Slope, 4: Aspect, 5: Fuel model (FBFM40)
-    # 6: Canopy cover, 7: Stand height, 8: Canopy base height, 9: Canopy bulk density
-    # 10: Wind speed (scalar), 11: Wind direction (scalar), 12: Foliar moisture (scalar)
-
-    channel_info = [
-        (2, "Elevation", "terrain", "m"),
-        (3, "Slope", "YlOrBr", "°"),
-        (4, "Aspect", "hsv", "°"),
-        (5, "Fuel Model\n(FBFM40)", "Set3", ""),
-        (6, "Canopy Cover", "Greens", "%"),
-        (7, "Stand Height", "Greens", "m"),
-        (8, "Canopy Base\nHeight", "Greens", "m"),
-        (9, "Canopy Bulk\nDensity", "Greens", "kg/m³"),
-    ]
-
-    sample_np = sample.numpy() if isinstance(sample, torch.Tensor) else sample
-
-    fig, axes = plt.subplots(2, 5, figsize=(20, 8))
-
-    # Plot spatial channels (2-9)
-    for i, (ch_idx, name, cmap, unit) in enumerate(channel_info):
-        row, col = divmod(i, 5)
-        ax = axes[row, col]
-        data = sample_np[ch_idx]
-
-        im = ax.imshow(data, cmap=cmap, aspect='equal')
-        ax.set_title(name, fontsize=10)
-        ax.axis('off')
-        cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        if unit:
-            cbar.set_label(unit, fontsize=8)
-
-    # Wind quiver plot
-    ax_wind = axes[1, 3]
-    wind_u = float(sample_np[10, 0, 0])
-    wind_v = float(sample_np[11, 0, 0])
-    wind_speed = np.sqrt(wind_u**2 + wind_v**2)
-    wind_dir = (np.degrees(np.arctan2(-wind_u, -wind_v)) + 360) % 360
-
-    grid_size = 10
-    x = np.linspace(0, 500, grid_size)
-    y = np.linspace(0, 500, grid_size)
-    X, Y = np.meshgrid(x, y)
-    # U/V are already in cartesian (U=east, V=north)
-    # set_ylim(500, 0) handles the y-axis flip for image coords
-    U = np.full_like(X, wind_u)
-    V = np.full_like(Y, wind_v)
-
-    ax_wind.quiver(X, Y, U, V, scale=wind_speed * 15, color='navy', alpha=0.7)
-    ax_wind.set_xlim(0, 500)
-    ax_wind.set_ylim(500, 0)
-    ax_wind.set_aspect('equal')
-    ax_wind.set_title(f"Wind\n{wind_speed:.0f} units @ {wind_dir:.0f}°", fontsize=10)
-    ax_wind.axis('off')
-
-    # Foliar moisture
-    ax_fm = axes[1, 4]
-    foliar_moisture = float(sample_np[12, 0, 0])
-    ax_fm.text(0.5, 0.5, f"Foliar\nMoisture\n\n{foliar_moisture:.0f}%",
-               ha='center', va='center', fontsize=14,
-               transform=ax_fm.transAxes)
-    ax_fm.axis('off')
-
-    fig.suptitle(f"Sample {sample_idx} — Static Input Channels", fontsize=13)
-    fig.tight_layout()
-
+    arr = viz.render_input_channels(sample, sample_idx)
     filepath = os.path.join(output_dir, f"input_channels_sample_{sample_idx:03d}.png")
-    Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(filepath, dpi=150, bbox_inches='tight')
-    plt.close(fig)
-    return filepath
+    return _save_figure(arr, filepath)
 
 
 def save_arrival_comparison(pred_history, gt_history, sample_idx, output_dir):
     """Save side-by-side arrival time comparison at multiple time steps."""
-    n_steps = len(pred_history)
-    indices = np.linspace(0, n_steps - 1, min(8, n_steps), dtype=int)
-
-    fig, axes = plt.subplots(3, len(indices), figsize=(len(indices) * 3, 9), squeeze=False)
-
-    for col, idx in enumerate(indices):
-        pred = pred_history[idx]
-        gt = gt_history[idx] if idx < len(gt_history) else gt_history[-1]
-
-        pred_mask = pred[0].numpy() if isinstance(pred, torch.Tensor) else pred[0]
-        gt_mask = gt[0].numpy() if isinstance(gt, torch.Tensor) else gt[0]
-
-        axes[0, col].imshow(np.where(pred_mask == 0, np.nan, pred_mask), cmap='YlOrRd', vmin=0, vmax=1, aspect='auto')
-        axes[0, col].set_title(f"t={idx}", fontsize=8)
-        axes[0, col].axis('off')
-
-        axes[1, col].imshow(np.where(gt_mask == 0, np.nan, gt_mask), cmap='YlOrRd', vmin=0, vmax=1, aspect='auto')
-        axes[1, col].axis('off')
-
-        error = np.abs(pred_mask - gt_mask)
-        axes[2, col].imshow(error, cmap='Reds', vmin=0, vmax=1, aspect='auto')
-        axes[2, col].axis('off')
-
-    axes[0, 0].set_ylabel("Predicted", fontsize=10)
-    axes[1, 0].set_ylabel("Ground Truth", fontsize=10)
-    axes[2, 0].set_ylabel("Error", fontsize=10)
-
-    fig.suptitle(f"Sample {sample_idx} — Fire Mask Rollout", fontsize=12)
-    fig.tight_layout()
-
+    arr = viz.render_mask_rollout(pred_history, gt_history, sample_idx)
     filepath = os.path.join(output_dir, f"comparison_sample_{sample_idx:03d}.png")
-    Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(filepath, dpi=150, bbox_inches='tight')
-    plt.close(fig)
-    return filepath
+    return _save_figure(arr, filepath)
 
 
 def save_final_arrival_map(pred_history, gt_history, sample_idx, output_dir):
     """Save final predicted vs ground truth arrival time map."""
-    pred_final = pred_history[-1]
-    gt_final = gt_history[-1]
-
-    pred_arr = pred_final[1].numpy() if isinstance(pred_final, torch.Tensor) else pred_final[1]
-    gt_arr = gt_final[1].numpy() if isinstance(gt_final, torch.Tensor) else gt_final[1]
-
-    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-
-    im0 = axes[0].imshow(np.where(pred_arr == 0, np.nan, pred_arr), cmap='YlOrRd', aspect='auto')
-    axes[0].set_title("Predicted Arrival Time")
-    axes[0].axis('off')
-    plt.colorbar(im0, ax=axes[0], fraction=0.046)
-
-    im1 = axes[1].imshow(np.where(gt_arr == 0, np.nan, gt_arr), cmap='YlOrRd', aspect='auto')
-    axes[1].set_title("Ground Truth Arrival Time")
-    axes[1].axis('off')
-    plt.colorbar(im1, ax=axes[1], fraction=0.046)
-
-    error = np.abs(pred_arr - gt_arr)
-    im2 = axes[2].imshow(error, cmap='Reds', aspect='auto')
-    axes[2].set_title(f"Absolute Error (MAE={error.mean():.4f})")
-    axes[2].axis('off')
-    plt.colorbar(im2, ax=axes[2], fraction=0.046)
-
-    fig.suptitle(f"Sample {sample_idx} — Final Arrival Time Map", fontsize=12)
-    fig.tight_layout()
-
+    arr = viz.render_final_arrival_map(pred_history, gt_history, sample_idx)
     filepath = os.path.join(output_dir, f"arrival_map_sample_{sample_idx:03d}.png")
-    Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(filepath, dpi=150, bbox_inches='tight')
-    plt.close(fig)
-    return filepath
+    return _save_figure(arr, filepath)
 
 
 def plot_training_curves(logdir, output_dir):

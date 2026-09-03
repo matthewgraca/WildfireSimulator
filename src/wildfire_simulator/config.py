@@ -47,6 +47,11 @@ def load_config(path=None):
     config.setdefault('in_channels', 14)
     config.setdefault('loss', 'dice')
 
+    # Training-time TensorBoard image viz: log rollout imagery for a fixed
+    # per-scene sample subset every ``viz_every`` epochs (0 disables).
+    config.setdefault('viz_every', 10)
+    config.setdefault('viz_samples_per_scene', 10)
+
     # Fine-tuning: optional weights-only initialization from a prior checkpoint.
     finetune = config.get('finetune') or {}
     init_ckpt = finetune.get('init_checkpoint')

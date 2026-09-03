@@ -21,6 +21,7 @@ from wildfire_simulator.scheduled_sampler import ScheduledSampler
 from wildfire_simulator.losses import DiceLoss, DistanceMapLoss
 from wildfire_simulator.utils import ScalarRNG
 from wildfire_simulator.config import load_config
+from wildfire_simulator.viz import select_viz_indices
 
 def main():
     parser = argparse.ArgumentParser(description="Train wildfire surrogate model")
@@ -83,6 +84,21 @@ def main():
             drop_last=False,
             num_workers=4,
         )
+
+    # TensorBoard image viz: fixed per-scene subset of validation samples,
+    # recorded (and rendered) every viz_every epochs. Seed 42 keeps the
+    # tracked samples identical to the split/subsample convention, so the
+    # same samples are watched across the whole run.
+    viz_every = int(config.get('viz_every', 10))
+    viz_n = int(config.get('viz_samples_per_scene', 10))
+    viz_record_indices = {}
+    if viz_every > 0:
+        for scene_name, scene_val_indices in per_scene_val.items():
+            if not scene_val_indices:
+                continue
+            viz_record_indices[scene_name] = select_viz_indices(
+                len(scene_val_indices), n=viz_n, seed=42
+            )
     
     model = MK_UNet_Regression(
         in_channels=config['in_channels'],
@@ -177,6 +193,9 @@ def main():
         epochs=100,
         max_t=config['max_t'],
         device=device,
+        viz_every=viz_every,
+        viz_record_indices=viz_record_indices,
+        val_transform=transform,
     )
 
     trainer.fit()
