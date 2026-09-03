@@ -26,7 +26,6 @@ def _payload(idx):
     gt_hist[1][0, 0, 0] = 1.0
     return {
         "idx": idx,
-        "input": torch.zeros(13, 4, 4),
         "pred_history": pred_hist,
         "gt_history": gt_hist,
     }
@@ -50,15 +49,7 @@ def test_tensorboard_callback_logs_viz_images_and_iou():
     assert val_w.scalars["IOU/scene/sceneA"] == [(7, 0.8)]
     assert val_w.scalars["Loss/scene/sceneA"] == [(7, 0.3)]
 
-    expected_tags = {
-        "viz/sceneA/fat_montage",
-        "viz/sceneA/sample_03/inputs",
-        "viz/sceneA/sample_03/mask_rollout",
-        "viz/sceneA/sample_03/fat",
-        "viz/sceneA/sample_17/inputs",
-        "viz/sceneA/sample_17/mask_rollout",
-        "viz/sceneA/sample_17/fat",
-    }
+    expected_tags = {"viz/sceneA/fat_montage"}
     assert set(val_w.images) == expected_tags
     for entries in val_w.images.values():
         assert [step for step, _ in entries] == [7]

@@ -112,9 +112,8 @@ class TensorBoardCallback:
         """Render and log the recorded validation samples as images.
 
         Per scene: one FAT montage snapshot (predicted vs ground-truth final
-        arrival-time maps, one column per sample) plus, per sample, static
-        input channels, mask rollout, and final FAT panels. Low DPI: these
-        are TB dashboard snapshots, not archival figures.
+        arrival-time maps, one column per sample). Low DPI: a TB dashboard
+        snapshot, not an archival figure.
         """
         viz_data = metrics.get('viz')
         if not viz_data:
@@ -130,24 +129,3 @@ class TensorBoardCallback:
                 ),
                 epoch,
             )
-            for p in payloads:
-                tag = f"viz/{scene}/sample_{p['idx']:02d}"
-                self._add_viz_image(
-                    f"{tag}/inputs",
-                    viz.render_input_channels(p['input'], p['idx'], dpi=50),
-                    epoch,
-                )
-                self._add_viz_image(
-                    f"{tag}/mask_rollout",
-                    viz.render_mask_rollout(
-                        p['pred_history'], p['gt_history'], p['idx'], dpi=50
-                    ),
-                    epoch,
-                )
-                self._add_viz_image(
-                    f"{tag}/fat",
-                    viz.render_final_arrival_map(
-                        p['pred_history'], p['gt_history'], p['idx'], dpi=50
-                    ),
-                    epoch,
-                )

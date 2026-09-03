@@ -195,7 +195,6 @@ def main():
         device=device,
         viz_every=viz_every,
         viz_record_indices=viz_record_indices,
-        val_transform=transform,
     )
 
     trainer.fit()

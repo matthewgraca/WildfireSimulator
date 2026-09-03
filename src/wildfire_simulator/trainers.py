@@ -111,7 +111,6 @@ class ForwardBurnTrainer:
         val_loaders=None,
         viz_every=0,
         viz_record_indices=None,
-        val_transform=None,
     ):
         self.model = model
         self.optimizer = optimizer
@@ -124,12 +123,10 @@ class ForwardBurnTrainer:
         self.val_loaders = val_loaders or {}
         # TensorBoard image viz: every ``viz_every`` epochs (0 disables),
         # record full rollouts for the fixed per-scene sample subsets in
-        # ``viz_record_indices`` ({scene: [loader positions]}).
-        # ``val_transform`` inverse-normalizes recorded inputs so the static
-        # channel panels show raw units.
+        # ``viz_record_indices`` ({scene: [loader positions]}); the callback
+        # renders them as FAT montage snapshots.
         self.viz_every = viz_every or 0
         self.viz_record_indices = viz_record_indices or {}
-        self.val_transform = val_transform
         self.train_batch_processor = train_batch_processor
         self.val_batch_processor = val_batch_processor
         self.callbacks = callbacks or []
@@ -203,8 +200,8 @@ class ForwardBurnTrainer:
         Returns:
             (val_loss, final_mask_iou, viz_records). ``viz_records`` is a
             ``{position: record}`` dict when ``record_indices`` is given,
-            else None. Each record holds the true sample and the predicted /
-            ground-truth (mask, FAT) frame history for one validation sample.
+            else None. Each record holds the predicted / ground-truth
+            (mask, FAT) frame history for one validation sample.
         """
         loader = loader if loader is not None else self.val_loader
         self.model.eval()
@@ -239,7 +236,6 @@ class ForwardBurnTrainer:
                     if local_rec:
                         for i in local_rec:
                             recorded[position + i] = {
-                                'true': batch[i],
                                 'pred_history': [],
                                 'gt_history': [],
                             }
@@ -317,24 +313,6 @@ class ForwardBurnTrainer:
 
         return total_loss / n_samples, iou_sum / n_samples, recorded
 
-    def _finalize_viz_record(self, position, record):
-        """Turn a raw recorded sample into a renderable payload.
-
-        Inverse-normalizes the true sample so the static channel panel shows
-        raw units (no-op when no transform was provided).
-        """
-        true = record['true']
-        input_sample = (
-            self.val_transform.inverse(true)
-            if self.val_transform is not None else true
-        )
-        return {
-            'idx': position,
-            'input': input_sample,
-            'pred_history': record['pred_history'],
-            'gt_history': record['gt_history'],
-        }
-
     def fit(self):
         total_epochs = self.epochs
         for epoch in range(self.current_epoch, total_epochs):
@@ -378,7 +356,11 @@ class ForwardBurnTrainer:
                 if records:
                     viz = metrics.setdefault('viz', {})
                     viz[scene_name] = [
-                        self._finalize_viz_record(position, record)
+                        {
+                            'idx': position,
+                            'pred_history': record['pred_history'],
+                            'gt_history': record['gt_history'],
+                        }
                         for position, record in sorted(records.items())
                     ]
 
