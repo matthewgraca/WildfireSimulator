@@ -46,11 +46,15 @@ def load_config(path=None):
     config.setdefault('lr', 5e-4)
     config.setdefault('in_channels', 14)
     config.setdefault('loss', 'dice')
-
     # Training-time TensorBoard image viz: log rollout imagery for a fixed
     # per-scene sample subset every ``viz_every`` epochs (0 disables).
     config.setdefault('viz_every', 10)
     config.setdefault('viz_samples_per_scene', 10)
+
+    # Training schedule: total epochs, and whether the EarlyStopping
+    # callback (patience 20 on val_loss) is active.
+    config.setdefault('epochs', 100)
+    config.setdefault('early_stopping', True)
 
     # Fine-tuning: optional weights-only initialization from a prior checkpoint.
     finetune = config.get('finetune') or {}

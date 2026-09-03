@@ -10,17 +10,24 @@ max_t: 1.0
 # Segmentation loss: "dice" (DiceLoss) or "dml" (Distance Map Loss,
 # Caliva et al. MIDL 2019, arXiv:1908.03679 — boundary-weighted cross-entropy
 # that upweights errors at the fire front).
-loss: dml
+loss: dice
 
 # Optimizer learning rate.
 lr: 5.0e-4
+
+# Number of training epochs.
+epochs: 100
+
+# Set to false to disable the early stopping callback (patience 20 on
+# val_loss); training then always runs the full ``epochs`` count.
+early_stopping: true
 
 # Scheduled sampling parameters
 # k: steepness of sigmoid transition
 # t0: epoch at which probability = 50%
 scheduled_sampling:
   k: 0.1
-  t0: 30
+  t0: 40
 
 # Training scenes. Each scene is one landscape with its own trials and
 # ignitions. Relative paths are resolved against this config file's directory.

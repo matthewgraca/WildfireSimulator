@@ -130,11 +130,15 @@ def main():
         filepath=os.path.join(output_dir, 'checkpoints/best-model-{epoch:02d}-{val_loss:.2f}.pt')
     )
 
-    early_stop_cb = EarlyStopping(
-        monitor='val_loss',
-        mode='min',
-        patience=20
-    )
+    # Early stopping is opt-out: set ``early_stopping: false`` in the config
+    # to train the full ``epochs`` count unconditionally.
+    early_stop_cb = None
+    if config.get('early_stopping', True):
+        early_stop_cb = EarlyStopping(
+            monitor='val_loss',
+            mode='min',
+            patience=20
+        )
 
     train_writer = SummaryWriter(os.path.join(output_dir, "training/train"))
     val_writer = SummaryWriter(os.path.join(output_dir, "training/val"))
@@ -189,8 +193,9 @@ def main():
         val_loaders=val_loaders,
         train_batch_processor=train_batch_processor,
         val_batch_processor=val_batch_processor,
-        callbacks=[checkpoint_cb, early_stop_cb, tensorboard_cb],
-        epochs=100,
+        callbacks=[cb for cb in [checkpoint_cb, early_stop_cb, tensorboard_cb]
+                   if cb is not None],
+        epochs=config['epochs'],
         max_t=config['max_t'],
         device=device,
         viz_every=viz_every,
