@@ -1,6 +1,8 @@
 import torch
 import os
 
+from wildfire_simulator import viz
+
 class ModelCheckpoint:
     def __init__(self, monitor, mode, filepath):
         self.monitor = monitor
@@ -82,6 +84,15 @@ class TensorBoardCallback:
                 scene = key.split('/', 1)[1]
                 self.val_writer.add_scalar(f"Loss/scene/{scene}", value, epoch)
 
+        # Per-scene final-mask IoU over the full validation sets (keys like
+        # 'val_iou/<scene>').
+        if 'val_iou' in metrics:
+            self.val_writer.add_scalar("IOU", metrics['val_iou'], epoch)
+            for key, value in metrics.items():
+                if key.startswith('val_iou/'):
+                    scene = key.split('/', 1)[1]
+                    self.val_writer.add_scalar(f"IOU/scene/{scene}", value, epoch)
+
         # Log per-component losses if available
         for key in ['bce', 'dice', 'focal', 'mask_loss', 'arrival_loss', 'ce', 'penalty']:
             train_key = f'train_{key}'
@@ -90,3 +101,53 @@ class TensorBoardCallback:
                 self.train_writer.add_scalar(f"Loss/{key}", metrics[train_key], epoch)
             if val_key in metrics:
                 self.val_writer.add_scalar(f"Loss/{key}", metrics[val_key], epoch)
+
+        self._log_viz_images(epoch, metrics)
+
+    def _add_viz_image(self, tag, arr, step):
+        """Log a uint8 (H, W, 3) render to the val writer as an image."""
+        self.val_writer.add_image(tag, arr, step, dataformats="HWC")
+
+    def _log_viz_images(self, epoch, metrics):
+        """Render and log the recorded validation samples as images.
+
+        Per scene: one FAT montage snapshot (predicted vs ground-truth final
+        arrival-time maps, one column per sample) plus, per sample, static
+        input channels, mask rollout, and final FAT panels. Low DPI: these
+        are TB dashboard snapshots, not archival figures.
+        """
+        viz_data = metrics.get('viz')
+        if not viz_data:
+            return
+        for scene, payloads in viz_data.items():
+            self._add_viz_image(
+                f"viz/{scene}/fat_montage",
+                viz.render_fat_montage(
+                    [p['pred_history'][-1][1] for p in payloads],
+                    [p['gt_history'][-1][1] for p in payloads],
+                    [p['idx'] for p in payloads],
+                    title=f"{scene} — epoch {epoch}",
+                ),
+                epoch,
+            )
+            for p in payloads:
+                tag = f"viz/{scene}/sample_{p['idx']:02d}"
+                self._add_viz_image(
+                    f"{tag}/inputs",
+                    viz.render_input_channels(p['input'], p['idx'], dpi=50),
+                    epoch,
+                )
+                self._add_viz_image(
+                    f"{tag}/mask_rollout",
+                    viz.render_mask_rollout(
+                        p['pred_history'], p['gt_history'], p['idx'], dpi=50
+                    ),
+                    epoch,
+                )
+                self._add_viz_image(
+                    f"{tag}/fat",
+                    viz.render_final_arrival_map(
+                        p['pred_history'], p['gt_history'], p['idx'], dpi=50
+                    ),
+                    epoch,
+                )
