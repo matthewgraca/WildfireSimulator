@@ -13,6 +13,7 @@ from wildfire_simulator.callbacks import ModelCheckpoint, TensorBoardCallback, E
 from wildfire_simulator.datasets import WildfireDataset, TransformedDataset
 from wildfire_simulator.transforms import MinMaxPerChannel
 from wildfire_simulator.forward_burn_process import ForwardBurnProcess
+from wildfire_simulator.losses import DiceLoss
 from wildfire_simulator.models import MK_UNet_Regression
 from wildfire_simulator.trainers import ForwardBurnTrainer, BurnerBatchProcessor
 from wildfire_simulator.scheduled_sampler import ScheduledSampler
@@ -349,3 +350,58 @@ def test_trainer_stops_early(dataloader):
     # fit() honored the stop signal: only 2 epochs ran despite epochs=5.
     assert stopper.calls == 2
     assert trainer.current_epoch == 2
+
+
+def test_validate_iou_perfect_predictor(dataloader):
+    # A model that returns the processor's target mask at every step is a
+    # perfect predictor: its rollout ends on the GT burned-so-far mask at
+    # t = max_t, so the final-mask IoU must be exactly 1.0. (The previous
+    # inverted ground-truth expression produced an empty GT mask and 0.0.)
+    dataset = WildfireDataset(dataloader)
+    transform = MinMaxPerChannel(dataset.min_val, dataset.max_val)
+    dataset = TransformedDataset(dataset, transform)
+    burner = ForwardBurnProcess()
+    proc = BurnerBatchProcessor(burner=burner, dt=1/8, eval=True)
+
+    state = {"targets": None}
+
+    class _PerfectModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            # Dummy parameter so AdamW has something to own.
+            self.dummy = nn.Parameter(torch.zeros(1))
+
+        def forward(self, x):
+            return state["targets"]
+
+    class _TargetCapturingProcessor:
+        def __init__(self, inner):
+            self._inner = inner
+            self.dt = inner.dt
+            self.device = inner.device
+
+        def __call__(self, *args, **kwargs):
+            inputs, targets = self._inner(*args, **kwargs)
+            state["targets"] = targets
+            return inputs, targets
+
+    wrapped = _TargetCapturingProcessor(proc)
+    model = _PerfectModel()
+
+    loader = DataLoader(dataset=dataset, batch_size=2, shuffle=False,
+                        drop_last=False, num_workers=0)
+    trainer = ForwardBurnTrainer(
+        model=model,
+        optimizer=torch.optim.AdamW(model.parameters(), 5e-4),
+        loss_fn=DiceLoss(),
+        train_loader=loader,
+        val_loader=loader,
+        train_batch_processor=wrapped,
+        val_batch_processor=wrapped,
+        epochs=1,
+        max_t=1.0,
+        device=torch.device("cpu"),
+    )
+
+    val_loss, val_iou, _ = trainer._validate(0, 1)
+    assert val_iou == 1.0

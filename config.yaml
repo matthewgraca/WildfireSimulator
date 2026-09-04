@@ -16,11 +16,11 @@ loss: dice
 lr: 5.0e-4
 
 # Number of training epochs.
-epochs: 100
+epochs: 200
 
 # Set to false to disable the early stopping callback (patience 20 on
 # val_loss); training then always runs the full ``epochs`` count.
-early_stopping: true
+early_stopping: false
 
 # Scheduled sampling parameters
 # k: steepness of sigmoid transition

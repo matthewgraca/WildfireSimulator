@@ -298,10 +298,11 @@ class ForwardBurnTrainer:
                             )
 
                 # Final-mask IoU over the whole batch: predicted rollout
-                # state vs the original mask (GT at t = max_t; mirrors the
-                # batch processor's burn, which zeroes the mask where
-                # FAT > t).
-                gt_final_mask = true_mask.where(true_fat > self.max_t, 0.0)
+                # state vs the GT mask at t = max_t (the batch processor's
+                # burn zeroes the mask where FAT > t; a pixel burns within
+                # the window iff FAT <= max_t).
+                gt_final_mask = true_mask.clone()
+                gt_final_mask[true_fat > self.max_t] = 0.0
                 pred_final = preds_padded[:, 0:1, :H, :W]
                 intersection = (pred_final * gt_final_mask).sum()
                 union = ((pred_final + gt_final_mask) > 0).sum()
