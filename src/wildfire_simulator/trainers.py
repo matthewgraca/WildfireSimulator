@@ -310,6 +310,10 @@ class ForwardBurnTrainer:
 
                 total_loss += (batch_loss / num_steps) * batch.size(0)
                 samples_seen += batch.size(0)
+                # Track the loader position so recorded indices beyond the
+                # first batch are found (and each recorded sample's history
+                # contains only its own frames).
+                position += batch.size(0)
                 pbar.set_postfix(val_loss=f"{total_loss / samples_seen:.4f}")
 
         return total_loss / n_samples, iou_sum / n_samples, recorded

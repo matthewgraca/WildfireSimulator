@@ -1,5 +1,5 @@
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard import SummaryWriter
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 import torch.nn as nn
@@ -405,3 +405,83 @@ def test_validate_iou_perfect_predictor(dataloader):
 
     val_loss, val_iou, _ = trainer._validate(0, 1)
     assert val_iou == 1.0
+
+
+def test_validate_records_positions_across_batches(dataloader):
+    # Recorded positions must track the loader position across batches.
+    # (The position counter used to stay at 0, so only first-batch
+    # positions ever matched: multi-batch val sets recorded nothing, and
+    # first-batch records accumulated frames from every batch.)
+    base = WildfireDataset(dataloader)
+    transform = MinMaxPerChannel(base.min_val, base.max_val)
+    base = TransformedDataset(base, transform)
+
+    class _Repeated(Dataset):
+        def __init__(self, ds, times):
+            self.ds, self.times = ds, times
+
+        def __len__(self):
+            return len(self.ds) * self.times
+
+        def __getitem__(self, idx):
+            return self.ds[idx % len(self.ds)]
+
+    dataset = _Repeated(base, 4)  # 8 samples, batch_size 2 -> 4 batches
+    proc = BurnerBatchProcessor(burner=ForwardBurnProcess(), dt=1/8, eval=True)
+
+    state = {"targets": None}
+
+    class _PerfectModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.dummy = nn.Parameter(torch.zeros(1))
+
+        def forward(self, x):
+            return state["targets"]
+
+    class _TargetCapturingProcessor:
+        def __init__(self, inner):
+            self._inner = inner
+            self.dt = inner.dt
+            self.device = inner.device
+
+        def __call__(self, *args, **kwargs):
+            inputs, targets = self._inner(*args, **kwargs)
+            state["targets"] = targets
+            return inputs, targets
+
+    wrapped = _TargetCapturingProcessor(proc)
+    model = _PerfectModel()
+
+    loader = DataLoader(dataset=dataset, batch_size=2, shuffle=False,
+                        drop_last=False, num_workers=0)
+    trainer = ForwardBurnTrainer(
+        model=model,
+        optimizer=torch.optim.AdamW(model.parameters(), 5e-4),
+        loss_fn=DiceLoss(),
+        train_loader=loader,
+        val_loader=loader,
+        train_batch_processor=wrapped,
+        val_batch_processor=wrapped,
+        epochs=1,
+        max_t=1.0,
+        device=torch.device("cpu"),
+    )
+
+    record_indices = [4, 5, 6, 7]  # last two batches
+    _, _, records = trainer._validate(0, 1, record_indices=record_indices)
+
+    num_steps = 7  # len(np.arange(1/8, 1.0, 1/8)): last step's t+dt hits 1.0
+    assert set(records) == set(record_indices)
+    for p in record_indices:
+        rec = records[p]
+        assert len(rec['pred_history']) == num_steps
+        assert len(rec['gt_history']) == num_steps
+        # GT identity: the final frame must be sample p's own burn state
+        # at t = max_t (mask/FAT zeroed where FAT > max_t).
+        sample = dataset[p][0:2]
+        expected = sample.clone()
+        not_burnt = sample[1:2] > 1.0
+        expected[0:1][not_burnt] = 0.0
+        expected[1:2][not_burnt] = 0.0
+        assert torch.allclose(rec['gt_history'][-1], expected)
