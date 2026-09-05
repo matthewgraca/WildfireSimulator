@@ -154,13 +154,24 @@ class ForwardBurnTrainer:
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
         samples_seen = 0
         for batch_idx, batch in enumerate(pbar):
-            num_steps = int(self.max_t / self.train_batch_processor.dt)
-
-            # Initialize preds on device (avoids CPU→GPU transfer each step)
             N = batch.size(0)
-            preds_padded = torch.zeros(N, 13, 512, 512, device=self.device)
-
             dt = self.train_batch_processor.dt
+
+            # Number of steps actually rolled out (len of the arange below),
+            # identical to _validate so train/val losses share the same
+            # normalization.
+            num_steps = len(np.arange(dt, self.max_t, dt))
+
+            # Seed the first step with the GT state at dt (fire burn + full
+            # landscape), exactly as _validate does. Scheduled sampling
+            # substitutes this state for the model's previous output; an
+            # all-zero init would erase the landscape and fire seed for
+            # self-driven samples.
+            preds_padded = batch.to(self.device).clone()
+            not_burnt = preds_padded[:, 1:2, :, :] > dt
+            preds_padded[:, 0:1][not_burnt] = 0.0
+            preds_padded[:, 1:2][not_burnt] = 0.0
+
             for t in np.arange(dt, self.max_t, dt):
                 inputs, targets = self.train_batch_processor(
                     preds_padded, batch, epoch=epoch, batch_idx=batch_idx, t=t

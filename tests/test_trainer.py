@@ -485,3 +485,83 @@ def test_validate_records_positions_across_batches(dataloader):
         expected[0:1][not_burnt] = 0.0
         expected[1:2][not_burnt] = 0.0
         assert torch.allclose(rec['gt_history'][-1], expected)
+
+
+def test_train_step1_self_input_seeded_with_gt(dataloader):
+    # Under full scheduled sampling (prob=1), every sample is self-driven at
+    # step 1. The step-1 input must be the GT state at dt (fire burn + full
+    # landscape), matching _validate's first-step initialization. Previously
+    # the training rollout was seeded with an all-zero tensor, so the model
+    # saw a blank input (no landscape, no fire seed) at step 1 and could not
+    # predict the next burn.
+    dataset = WildfireDataset(dataloader)
+    transform = MinMaxPerChannel(dataset.min_val, dataset.max_val)
+    dataset = TransformedDataset(dataset, transform)
+    burner = ForwardBurnProcess()
+
+    class ConstSampler:
+        def get_prob(self, epoch):
+            return 1.0
+
+    proc = BurnerBatchProcessor(
+        burner=burner, dt=1/8, eval=False,
+        sampler=ConstSampler(), rng=ScalarRNG(),
+    )
+
+    state = {"step1_inputs": None, "step": 0}
+
+    class _RecordingProcessor:
+        def __init__(self, inner):
+            self._inner = inner
+            self.dt = inner.dt
+            self.device = inner.device
+
+        def __call__(self, *args, **kwargs):
+            inputs, targets = self._inner(*args, **kwargs)
+            if state["step"] == 0:
+                state["step1_inputs"] = inputs
+            state["step"] += 1
+            return inputs, targets
+
+    wrapped = _RecordingProcessor(proc)
+
+    class _ZerosModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            # Dummy parameter (≈0) so the output is differentiable and AdamW
+            # owns a parameter.
+            self.dummy = nn.Parameter(torch.zeros(1))
+
+        def forward(self, x):
+            return self.dummy * torch.ones(x.shape[0], 1, x.shape[2], x.shape[3])
+
+    model = _ZerosModel()
+
+    loader = DataLoader(dataset=dataset, batch_size=2, shuffle=True,
+                        drop_last=False, num_workers=0)
+    trainer = ForwardBurnTrainer(
+        model=model,
+        optimizer=torch.optim.AdamW(model.parameters(), 5e-4),
+        loss_fn=DiceLoss(),
+        train_loader=loader,
+        val_loader=loader,
+        train_batch_processor=wrapped,
+        val_batch_processor=wrapped,
+        epochs=1,
+        max_t=1.0,
+        device=torch.device("cpu"),
+    )
+
+    trainer._train_epoch(0, 1)
+
+    inputs = state["step1_inputs"]
+    assert inputs is not None
+    # Landscape channels (2:13) must carry the real terrain/fuel/wind, not
+    # zeros. This is the regression: a blank init erased them at step 1.
+    assert inputs[:, 2:13, :, :].abs().sum() > 0
+    # The fire seed must be present too: some mask pixels burned at dt.
+    H, W = inputs.shape[-2], inputs.shape[-1]
+    gt_burn = inputs[:, 0, :H, :W] > 0
+    assert gt_burn.sum() > 0
+    # Step count matches the actual rollout (7), not max_t/dt (8).
+    assert state["step"] == 7 * len(loader)
